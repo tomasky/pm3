@@ -594,22 +594,11 @@ async fn cmd_config(args : Array[String]) -> Unit {
     return
   }
   if args.length() >= 1 && args[0] == "apps" {
-    match @pm3.find_app_config() {
-      None =>
-        print_line(
-          "no config file found; create one with 'pm3 config init toml'",
-        )
-      Some(path) =>
-        match @pm3.load_apps_from_file(path) {
-          Err(message) => print_error("pm3: \{path}: \{message}")
-          Ok(apps) => {
-            print_line("\{path} declares \{apps.length()} app(s):")
-            for app in apps {
-              print_line("  \{app.name}  \{app.command_display()}")
-            }
-          }
-        }
+    let rest : Array[String] = []
+    for index in 1..<args.length() {
+      rest.push(args[index])
     }
+    cmd_config_apps(rest)
     return
   }
   let source = @pm3.active_config_source()
@@ -621,6 +610,73 @@ async fn cmd_config(args : Array[String]) -> Unit {
         @pm3.render_config(@pm3.default_logrotate_config(), source.format),
       )
   }
+}
+
+///|
+/// `pm3 config apps [--config <file>] [--json]` — show what `pm3 start` would
+/// bring up, without starting anything.
+///
+/// It reads the same file `pm3 start` would, by the same rules, and reports
+/// what it finds — so it is both a preview and the way to validate a config
+/// file without touching the daemon.
+async fn cmd_config_apps(args : Array[String]) -> Unit {
+  let json = args.contains("--json")
+  let rest : Array[String] = []
+  for arg in args {
+    if arg != "--json" {
+      rest.push(arg)
+    }
+  }
+  let path = match start_config_path(rest) {
+    Err(message) => {
+      print_error("pm3: \{message}")
+      return
+    }
+    Ok(Some(path)) => path
+    Ok(None) => {
+      print_line(
+        "no config file found in this directory or \{@pm3.pm3_home()};" +
+        " pass --config <file> to name one, or write a pm3.toml describing the apps",
+      )
+      return
+    }
+  }
+  let apps = match @pm3.load_apps_from_file(path) {
+    Ok(apps) => apps
+    Err(message) => {
+      print_error("pm3: \{path}: \{message}")
+      return
+    }
+  }
+  if json {
+    print_line(@json.to_json(apps).stringify())
+    return
+  }
+  let headers = ["name", "command", "cwd", "memory limit", "autorestart"]
+  let rows : Array[Array[String]] = []
+  for app in apps {
+    rows.push([
+      @pm3.truncate_text(app.name, 24),
+      @pm3.truncate_text(app.command_display(), 44),
+      @pm3.truncate_text(app.cwd, 24),
+      if app.max_memory_restart == 0L {
+        "-"
+      } else {
+        @pm3.format_size(app.max_memory_restart, precision=0)
+      },
+      if app.autorestart {
+        "yes"
+      } else {
+        "no"
+      },
+    ])
+  }
+  print_line("\{path} declares \{apps.length()} app(s):")
+  print_line("")
+  print_line(render_table(headers, rows))
+  print_line(
+    "pm3 start\{if rest.length() > 0 { " --config " + path } else { "" }}   # to start them",
+  )
 }
 
 ///|
@@ -646,24 +702,28 @@ async fn print_help() -> Unit {
     #|
     #|Processes:
     #|  start <script> [options] [-- args...]   start a process
-    #|  start [--config <file>]                 start every app a config file declares
     #|  list | ls                               list managed processes
     #|  describe <name>                         show one process in detail
     #|  stop [name]                             stop one or all processes
     #|  restart [name]                          restart one or all processes
     #|  delete [name] | del                     stop and remove processes
     #|
+    #|Apps from a config file (pm3.toml / pm3.json):
+    #|  start [--config <file>]                 start every app the file declares
+    #|  config apps [--config <file>]           show what that would start, without starting it
+    #|
     #|Logs:
     #|  logs [name] [--lines N] [--follow]      show (and follow) logs
     #|  flush                                   truncate all managed logs
     #|  reloadLogs                              rotate all managed logs now
     #|
-    #|Log rotation:
+    #|Log rotation (the policy is global, not per project):
     #|  logrotate                               show the rotation policy
     #|  set logrotate:<key> <value>             change the rotation policy
-    #|  config                                  show the config file and its contents
-    #|  config init [toml|json] [--force]       create a config file
-    #|  config apps                             list the apps the config file declares
+    #|
+    #|Global config file:
+    #|  config                                  show it and its contents
+    #|  config init [toml|json] [--force]       create it
     #|
     #|Daemon:
     #|  save                                    persist the process list
