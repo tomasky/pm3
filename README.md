@@ -163,7 +163,7 @@ see [Application config](#application-config).
 
 ```sh
 pm3 start                 # reads ./pm3.toml
-pm3 config apps           # what would that start?
+pm3 config apps           # show what that would start
 ```
 
 ## Configuration
@@ -258,7 +258,7 @@ and looked up on `PATH`, exactly as `pm3 start sh` would.
 pm3 start                  # ./pm3.toml, or the global file
 pm3 start --config prod.toml
 pm3 start pm3.json         # a positional .toml/.json is a config file
-pm3 config apps            # check what would be started
+pm3 config apps            # show what that would start, and validate the file
 ```
 
 Apps that are already online are left running, so re-running `pm3 start` after
@@ -287,7 +287,7 @@ directly, and options after the script are passed to the program, so
 | `pm3 set logrotate:<key> <value>` | Change the rotation policy |
 | `pm3 config` | Show the active config file and its contents |
 | `pm3 config init [toml\|json] [--force]` | Create a config file |
-| `pm3 config apps` | List the apps the config file declares |
+| `pm3 config apps [--config <file>] [--json]` | Show what `pm3 start` would start, without starting it |
 | `pm3 save` | Persist the process list to `dump.json` |
 | `pm3 resurrect` | Start the processes that were desired online |
 | `pm3 kill` | Stop the daemon (and its processes) |
@@ -519,4 +519,4 @@ documented in [`npmjs/README.md`](npmjs/README.md).
 
 ## License
 
-MIT.
+Apache-2.0.
