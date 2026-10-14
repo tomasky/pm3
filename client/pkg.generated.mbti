@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kupas/pm3/client"
+
+import {
+  "kupas/pm3",
+}
+
+// Values
+pub async fn call(@pm3.Request) -> @pm3.Response
+
+pub async fn main_cli() -> Unit
+
+pub async fn start_daemon() -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

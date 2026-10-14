@@ -1,0 +1,13 @@
+import {
+  "kupas/pm3",
+  "kupas/pm3/daemon",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+  "moonbitlang/async",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/process",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/stdio",
+}
+
+supported_targets = "+native"

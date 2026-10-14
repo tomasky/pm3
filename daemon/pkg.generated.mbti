@@ -1,0 +1,123 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kupas/pm3/daemon"
+
+import {
+  "kupas/pm3",
+  "moonbitlang/async",
+  "moonbitlang/async/aqueue",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/process",
+}
+
+// Values
+pub async fn delete_managed(DaemonState, Managed) -> Unit
+
+pub async fn halt_managed(DaemonState, Managed) -> Unit
+
+pub async fn load_logrotate_config() -> @pm3.LogrotateConfig
+
+pub fn parse_fixed_tz(String) -> Int?
+
+pub fn pid_alive(Int) -> Bool
+
+pub fn pm3_clk_tck() -> Int
+
+pub fn pm3_getpid() -> Int
+
+pub fn pm3_kill(Int, Int) -> Int
+
+pub fn pm3_local_offset(Int64) -> Int
+
+pub fn pm3_pagesize() -> Int
+
+pub fn pm3_pid_alive(Int) -> Int
+
+pub fn pm3_setsid() -> Int
+
+pub async fn read_cpu_ticks(Int) -> Int64
+
+pub async fn read_rss_bytes(Int) -> Int64
+
+pub async fn resolve_tz_offset(String, Int64) -> Int
+
+pub async fn restart_managed(@async.TaskGroup[Unit], DaemonState, Managed) -> Unit
+
+pub async fn run_compress_loop(DaemonState) -> Unit
+
+pub async fn run_daemon() -> Unit
+
+pub async fn run_logrotate_loop(DaemonState) -> Unit
+
+pub async fn run_monitor_loop(@async.TaskGroup[Unit], DaemonState) -> Unit
+
+pub async fn save_logrotate_config(@pm3.LogrotateConfig) -> Unit
+
+pub fn send_signal(Int, Int) -> Unit
+
+pub let sig_hup : Int
+
+pub let sig_int : Int
+
+pub let sig_kill : Int
+
+pub let sig_term : Int
+
+pub fn signal_number(String) -> Int
+
+pub fn start_managed(@async.TaskGroup[Unit], DaemonState, Managed) -> Unit
+
+pub async fn stop_managed(DaemonState, Managed) -> Unit
+
+// Errors
+
+// Types and methods
+pub struct DaemonState {
+  mut apps : Map[Int, Managed]
+  mut next_id : Int
+  mut running : Bool
+  config : @pm3.LogrotateConfig
+  sinks : Map[String, LogSink]
+  compress_queue : @aqueue.Queue[String]
+  mut port : Int
+}
+pub fn DaemonState::add(Self, @pm3.App) -> Managed
+pub fn DaemonState::find_by_name(Self, String) -> Managed?
+pub fn DaemonState::get(Self, Int) -> Managed?
+pub async fn DaemonState::load(Self) -> Unit
+pub fn DaemonState::new(@pm3.LogrotateConfig) -> Self
+pub fn DaemonState::ordered(Self) -> Array[Managed]
+pub fn DaemonState::remove(Self, Int) -> Unit
+pub async fn DaemonState::save(Self) -> Unit
+pub async fn DaemonState::sink_for(Self, String) -> LogSink
+
+pub struct LogSink {
+  path : String
+  config : @pm3.LogrotateConfig
+  compress_queue : @aqueue.Queue[String]
+  mut file : @fs.File
+  mut size : Int64
+  lock : @async.Mutex
+  mut rotate_requested : Bool
+  mut tz_offset : Int
+  mut last_prune_ms : Int64
+  mut closed : Bool
+}
+pub async fn LogSink::close(Self) -> Unit
+pub async fn LogSink::flush(Self) -> Unit
+pub async fn LogSink::maybe_rotate(Self) -> Unit
+pub async fn LogSink::open(String, @pm3.LogrotateConfig, @aqueue.Queue[String]) -> Self
+pub async fn LogSink::prune(Self, Int64) -> Unit
+pub fn LogSink::request_rotate(Self) -> Unit
+pub async fn LogSink::write(Self, Bytes) -> Unit
+
+pub struct Managed {
+  app : @pm3.App
+  mut proc : @process.Process?
+  mut task : @async.Task[Unit]?
+  mut last_cpu_ticks : Int64
+  mut last_cpu_at : Int64
+}
+
+// Type aliases
+
+// Traits

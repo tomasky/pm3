@@ -1,0 +1,17 @@
+import {
+  "kupas/pm3",
+  "moonbitlang/core/json",
+  "moonbitlang/async",
+  "moonbitlang/async/aqueue",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/gzip",
+  "moonbitlang/async/process",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/stdio",
+}
+
+supported_targets = "+native"
+
+options(
+  "native-stub": [ "stub.c" ],
+)

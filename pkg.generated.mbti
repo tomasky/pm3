@@ -1,0 +1,256 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kupas/pm3"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn civil_from_days(Int) -> (Int, Int, Int)
+
+pub let cmd_delete : String
+
+pub let cmd_describe : String
+
+pub let cmd_flush : String
+
+pub let cmd_get_logrotate : String
+
+pub let cmd_kill : String
+
+pub let cmd_list : String
+
+pub let cmd_ping : String
+
+pub let cmd_reload_logs : String
+
+pub let cmd_reset : String
+
+pub let cmd_restart : String
+
+pub let cmd_resurrect : String
+
+pub let cmd_save : String
+
+pub let cmd_set_logrotate : String
+
+pub let cmd_start : String
+
+pub let cmd_stop : String
+
+pub fn cron_matches(CronSpec, Int64) -> Bool
+
+pub fn days_from_civil(Int, Int, Int) -> Int
+
+pub fn decode_request(String) -> Request?
+
+pub fn decode_response(String) -> Response?
+
+pub fn default_log_path(String, String) -> String
+
+pub fn default_logrotate_config() -> LogrotateConfig
+
+pub fn encode_request(Request) -> String
+
+pub fn encode_response(Response) -> String
+
+pub fn format_duration(Int64) -> String
+
+pub fn format_fixed(Double, Int) -> String
+
+pub fn format_size(Int64, precision? : Int) -> String
+
+pub fn format_timestamp(Int64, Int, String) -> String
+
+pub fn next_cron_fire(CronSpec, Int64, Int) -> Int64?
+
+pub fn pad_left_text(String, Int, Char) -> String
+
+pub fn pad_right(String, Int, Char) -> String
+
+pub fn parse_bool_value(StringView) -> Bool?
+
+pub fn parse_cron(String) -> CronSpec?
+
+pub fn parse_non_negative_int(StringView) -> Int?
+
+pub fn parse_rotated_stamp(String, String) -> String?
+
+pub fn parse_size(StringView) -> Int64?
+
+pub fn parse_size_or(StringView, Int64) -> Int64
+
+pub fn path_basename(String) -> String
+
+pub fn path_dirname(String) -> String
+
+pub fn path_join(String, String) -> String
+
+pub fn pm3_daemon_log_path() -> String
+
+pub fn pm3_dump_path() -> String
+
+pub fn pm3_home() -> String
+
+pub fn pm3_log_dir() -> String
+
+pub fn pm3_logrotate_config_path() -> String
+
+pub fn pm3_pid_path() -> String
+
+pub fn pm3_port_path() -> String
+
+pub fn pm3_state_dir() -> String
+
+pub fn rotated_path(String, String, Bool) -> String
+
+pub fn rotation_due(Int64, LogrotateConfig) -> Bool
+
+pub fn select_for_deletion(Array[RotatedFile], Int, Int, Int64) -> Array[String]
+
+pub fn split_timestamp(Int64) -> (Int, Int, Int, Int, Int, Int, Int)
+
+pub let status_errored : String
+
+pub let status_launching : String
+
+pub let status_online : String
+
+pub let status_stopped : String
+
+pub let status_stopping : String
+
+pub fn strip_suffix_owned(String, String) -> String
+
+pub fn truncate_text(String, Int) -> String
+
+pub fn weekday_from_days(Int) -> Int
+
+// Errors
+
+// Types and methods
+pub(all) struct App {
+  mut pm_id : Int
+  mut name : String
+  mut script : String
+  mut args : Array[String]
+  mut interpreter : String
+  mut cwd : String
+  mut env : Map[String, String]
+  mut out_log : String
+  mut err_log : String
+  mut merge_logs : Bool
+  mut log_date_format : String
+  mut autorestart : Bool
+  mut max_restarts : Int
+  mut restart_delay : Int
+  mut min_uptime : Int
+  mut max_memory_restart : Int64
+  mut kill_timeout : Int
+  mut kill_signal : String
+  mut stop_exit_codes : Array[Int]
+  mut status : String
+  mut desired_state : String
+  mut pid : Int
+  mut restarts : Int
+  mut unstable_restarts : Int
+  mut created_at : Int64
+  mut started_at : Int64
+  mut stopped_at : Int64
+  mut exit_code : Int
+  mut out_log_size : Int64
+  mut err_log_size : Int64
+  mut memory : Int64
+  mut cpu : Double
+  mut last_start_ms : Int64
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+pub fn App::command_display(Self) -> String
+pub fn App::command_line(Self) -> (String, Array[String])
+pub fn App::equal(Self, Self) -> Bool
+pub fn App::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn App::is_online(Self) -> Bool
+pub fn App::mark_exited(Self, Int) -> Unit
+pub fn App::mark_started(Self, Int) -> Unit
+pub fn App::new(String, String, Array[String]) -> Self
+pub fn App::not_equal(Self, Self) -> Bool
+pub fn App::record_restart(Self) -> Unit
+pub fn App::should_restart(Self, Int) -> Bool
+pub fn App::to_json(Self) -> Json
+pub fn App::to_repr(Self) -> @debug.Repr
+pub fn App::to_summary_json(Self) -> Json
+pub fn App::wants_stop(Self) -> Bool
+
+pub struct CronSpec {
+  seconds : Array[Int]
+  minutes : Array[Int]
+  hours : Array[Int]
+  days_of_month : Array[Int]
+  months : Array[Int]
+  days_of_week : Array[Int]
+  seconds_restricted : Bool
+  dom_restricted : Bool
+  dow_restricted : Bool
+} derive(Eq, @debug.Debug)
+pub fn CronSpec::equal(Self, Self) -> Bool
+pub fn CronSpec::not_equal(Self, Self) -> Bool
+pub fn CronSpec::to_repr(Self) -> @debug.Repr
+
+pub struct LogrotateConfig {
+  mut max_size : Int64
+  mut retain : Int
+  mut compress : Bool
+  mut compression_level : Int
+  mut date_format : String
+  mut worker_interval : Int
+  mut rotate_interval : String
+  mut tz : String
+  mut rotate_module : Bool
+  mut min_size : Int64
+  mut max_age_days : Int
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+pub fn LogrotateConfig::equal(Self, Self) -> Bool
+pub fn LogrotateConfig::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn LogrotateConfig::not_equal(Self, Self) -> Bool
+pub fn LogrotateConfig::set_field(Self, String, String) -> Result[Unit, String]
+pub fn LogrotateConfig::to_display(Self) -> String
+pub fn LogrotateConfig::to_json(Self) -> Json
+pub fn LogrotateConfig::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Request {
+  cmd : String
+  args : Array[String]
+  opts : Map[String, String]
+  flags : Map[String, Bool]
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+pub fn Request::equal(Self, Self) -> Bool
+pub fn Request::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Request::new(String) -> Self
+pub fn Request::not_equal(Self, Self) -> Bool
+pub fn Request::to_json(Self) -> Json
+pub fn Request::to_repr(Self) -> @debug.Repr
+pub fn Request::with_args(String, Array[String]) -> Self
+
+pub(all) struct Response {
+  ok : Bool
+  msg : String
+  data : Json
+} derive(ToJson, @debug.Debug, @json.FromJson)
+pub fn Response::failure(String) -> Self
+pub fn Response::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Response::success(String) -> Self
+pub fn Response::success_data(String, Json) -> Self
+pub fn Response::to_json(Self) -> Json
+pub fn Response::to_repr(Self) -> @debug.Repr
+
+pub(all) struct RotatedFile {
+  name : String
+  mtime : Int64
+} derive(Eq, @debug.Debug)
+pub fn RotatedFile::equal(Self, Self) -> Bool
+pub fn RotatedFile::not_equal(Self, Self) -> Bool
+pub fn RotatedFile::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
