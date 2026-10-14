@@ -18,6 +18,11 @@ pub let cmd_list : String = "list"
 pub let cmd_start : String = "start"
 
 ///|
+/// Start every app declared in a config file. `args[0]` is a JSON array of
+/// `App` records, already resolved by the client.
+pub let cmd_start_apps : String = "start_apps"
+
+///|
 pub let cmd_stop : String = "stop"
 
 ///|

@@ -7,6 +7,14 @@ import {
 }
 
 // Values
+pub fn active_config_source() -> ConfigSource
+
+pub fn app_config_candidates() -> Array[String]
+
+pub fn app_field_names() -> Array[String]
+
+pub fn apps_from_json(Json, String) -> Result[Array[App], String]
+
 pub fn civil_from_days(Int) -> (Int, Int, Int)
 
 pub let cmd_delete : String
@@ -14,6 +22,8 @@ pub let cmd_delete : String
 pub let cmd_describe : String
 
 pub let cmd_flush : String
+
+pub let cmd_get_config : String
 
 pub let cmd_get_logrotate : String
 
@@ -37,7 +47,11 @@ pub let cmd_set_logrotate : String
 
 pub let cmd_start : String
 
+pub let cmd_start_apps : String
+
 pub let cmd_stop : String
+
+pub fn config_format_of(String) -> ConfigFormat?
 
 pub fn cron_matches(CronSpec, Int64) -> Bool
 
@@ -47,13 +61,21 @@ pub fn decode_request(String) -> Request?
 
 pub fn decode_response(String) -> Response?
 
+pub fn default_config_source() -> ConfigSource
+
 pub fn default_log_path(String, String) -> String
 
 pub fn default_logrotate_config() -> LogrotateConfig
 
+pub fn derive_config_app_name(String) -> String
+
 pub fn encode_request(Request) -> String
 
 pub fn encode_response(Response) -> String
+
+pub fn find_app_config() -> String?
+
+pub fn find_config_source() -> ConfigSource?
 
 pub fn format_duration(Int64) -> String
 
@@ -61,7 +83,23 @@ pub fn format_fixed(Double, Int) -> String
 
 pub fn format_size(Int64, precision? : Int) -> String
 
+pub fn format_size_exact(Int64) -> String
+
 pub fn format_timestamp(Int64, Int, String) -> String
+
+pub fn has_apps(Json) -> Bool
+
+pub fn is_app_config_file(String) -> Bool
+
+pub fn load_apps_from_file(String) -> Result[Array[App], String]
+
+pub fn load_logrotate_config() -> (LogrotateConfig, ConfigSource)
+
+pub fn logrotate_from_json(Json) -> Result[LogrotateConfig, String]
+
+pub fn logrotate_to_json(LogrotateConfig) -> Json
+
+pub fn logrotate_to_toml(LogrotateConfig) -> String
 
 pub fn next_cron_fire(CronSpec, Int64, Int) -> Int64?
 
@@ -70,6 +108,8 @@ pub fn pad_left_text(String, Int, Char) -> String
 pub fn pad_right(String, Int, Char) -> String
 
 pub fn parse_bool_value(StringView) -> Bool?
+
+pub fn parse_config_text(String, ConfigFormat) -> Result[Json, String]
 
 pub fn parse_cron(String) -> CronSpec?
 
@@ -81,11 +121,19 @@ pub fn parse_size(StringView) -> Int64?
 
 pub fn parse_size_or(StringView, Int64) -> Int64
 
+pub fn parse_toml(String) -> Result[Json, String]
+
 pub fn path_basename(String) -> String
 
 pub fn path_dirname(String) -> String
 
 pub fn path_join(String, String) -> String
+
+pub fn pm3_config_candidates() -> Array[String]
+
+pub fn pm3_config_json_path() -> String
+
+pub fn pm3_config_toml_path() -> String
 
 pub fn pm3_daemon_log_path() -> String
 
@@ -103,9 +151,15 @@ pub fn pm3_port_path() -> String
 
 pub fn pm3_state_dir() -> String
 
+pub fn read_config_file(String) -> Result[Json, String]
+
+pub fn render_config(LogrotateConfig, ConfigFormat) -> String
+
 pub fn rotated_path(String, String, Bool) -> String
 
 pub fn rotation_due(Int64, LogrotateConfig) -> Bool
+
+pub fn save_logrotate_config(LogrotateConfig, ConfigSource) -> Result[Unit, String]
 
 pub fn select_for_deletion(Array[RotatedFile], Int, Int, Int64) -> Array[String]
 
@@ -126,6 +180,8 @@ pub fn strip_suffix_owned(String, String) -> String
 pub fn truncate_text(String, Int) -> String
 
 pub fn weekday_from_days(Int) -> Int
+
+pub fn write_default_config(ConfigFormat, Bool) -> Result[String, String]
 
 // Errors
 
@@ -180,6 +236,22 @@ pub fn App::to_json(Self) -> Json
 pub fn App::to_repr(Self) -> @debug.Repr
 pub fn App::to_summary_json(Self) -> Json
 pub fn App::wants_stop(Self) -> Bool
+
+pub(all) enum ConfigFormat {
+  Toml
+  Json
+} derive(Eq, @debug.Debug)
+pub fn ConfigFormat::equal(Self, Self) -> Bool
+pub fn ConfigFormat::not_equal(Self, Self) -> Bool
+pub fn ConfigFormat::to_repr(Self) -> @debug.Repr
+
+pub(all) struct ConfigSource {
+  path : String
+  format : ConfigFormat
+} derive(Eq, @debug.Debug)
+pub fn ConfigSource::equal(Self, Self) -> Bool
+pub fn ConfigSource::not_equal(Self, Self) -> Bool
+pub fn ConfigSource::to_repr(Self) -> @debug.Repr
 
 pub struct CronSpec {
   seconds : Array[Int]

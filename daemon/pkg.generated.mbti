@@ -14,8 +14,6 @@ pub async fn delete_managed(DaemonState, Managed) -> Unit
 
 pub async fn halt_managed(DaemonState, Managed) -> Unit
 
-pub async fn load_logrotate_config() -> @pm3.LogrotateConfig
-
 pub fn parse_fixed_tz(String) -> Int?
 
 pub fn pid_alive(Int) -> Bool
@@ -50,8 +48,6 @@ pub async fn run_logrotate_loop(DaemonState) -> Unit
 
 pub async fn run_monitor_loop(@async.TaskGroup[Unit], DaemonState) -> Unit
 
-pub async fn save_logrotate_config(@pm3.LogrotateConfig) -> Unit
-
 pub fn send_signal(Int, Int) -> Unit
 
 pub let sig_hup : Int
@@ -76,6 +72,7 @@ pub struct DaemonState {
   mut next_id : Int
   mut running : Bool
   config : @pm3.LogrotateConfig
+  config_source : @pm3.ConfigSource
   sinks : Map[String, LogSink]
   compress_queue : @aqueue.Queue[String]
   mut port : Int
@@ -84,7 +81,7 @@ pub fn DaemonState::add(Self, @pm3.App) -> Managed
 pub fn DaemonState::find_by_name(Self, String) -> Managed?
 pub fn DaemonState::get(Self, Int) -> Managed?
 pub async fn DaemonState::load(Self) -> Unit
-pub fn DaemonState::new(@pm3.LogrotateConfig) -> Self
+pub fn DaemonState::new(@pm3.LogrotateConfig, @pm3.ConfigSource) -> Self
 pub fn DaemonState::ordered(Self) -> Array[Managed]
 pub fn DaemonState::remove(Self, Int) -> Unit
 pub async fn DaemonState::save(Self) -> Unit

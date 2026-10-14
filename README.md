@@ -140,8 +140,15 @@ pm3 start ./server --name api -- --port 8080
 # Environment variables.
 pm3 start ./server --name api -e PORT=8080 -e LOG_LEVEL=info
 
-# Inspect it.
+# Inspect it. The footer totals the running processes.
 pm3 list
+# id  name   status  cpu    mem     restarts  uptime  command
+# --  -----  ------  -----  ------  --------  ------  ------------------
+# 0   worker online  0.1%   24 MB   0         2h14m   ./worker.sh
+# 1   digest online  91.5%  118 MB  3         41m     python3 ./digest.py
+#
+# 2/2 online   total cpu 91.6%   total mem 142.13 MB
+
 pm3 describe api
 pm3 logs api --follow
 
@@ -150,12 +157,124 @@ pm3 stop api
 pm3 delete api
 ```
 
+Or declare the services in a `pm3.toml` and bring them all up at once —
+see [Application config](#application-config).
+
+```sh
+pm3 start                 # reads ./pm3.toml
+pm3 config apps           # what would that start?
+```
+
+## Configuration
+
+pm3 reads **TOML and JSON only**. Anything else — YAML, INI, a `.js` file —
+is refused with an error rather than ignored.
+
+There are two things to configure, and they live in the same file format:
+
+| | What it describes | Where pm3 looks |
+| --- | --- | --- |
+| **Applications** | Which processes to run, and how | `$PM3_CONFIG`, then `./pm3.toml`, `./pm3.json`, then the global file |
+| **Log rotation** | The rotation policy, shared by every process | the global file only |
+
+The global file is `$PM3_HOME/config.toml` (or `config.json`) — by default
+`~/.pm3/config.toml`. It is global because the daemon is: one supervisor owns
+every process on the machine, so one rotation policy applies to all of them.
+A legacy `~/.pm3/logrotate.json` is still read.
+
+`pm3 config` prints the global file and its contents, `pm3 config init toml`
+(or `json`) creates one seeded with the current policy, and `pm3 config apps`
+prints the app list pm3 would start.
+
+### Application config
+
+This is the pm3 equivalent of PM2's `ecosystem.config.js`: a project checks in
+`pm3.toml`, and `pm3 start` brings the whole thing up.
+
+```toml
+# pm3.toml
+[defaults]                    # optional, applied to every app below
+max_restarts = 16
+max_memory_restart = "200M"
+
+[[app]]
+name = "worker"
+script = "./worker.py"
+interpreter = "python3"
+args = ["--verbose"]
+env = { PORT = "8080", LOG_LEVEL = "info" }
+
+[[app]]
+name = "api"
+script = "./bin/server"
+max_memory_restart = "1G"        # overrides the default for this app only
+stop_exit_codes = [0, 2]
+```
+
+The same document in JSON:
+
+```json
+{
+  "defaults": { "max_restarts": 16 },
+  "app": [
+    { "name": "worker", "script": "./worker.py", "interpreter": "python3" }
+  ]
+}
+```
+
+Every `start` option has a config key of the same name:
+
+| Key | Type |
+| --- | --- |
+| `name` | string (default: the script's basename without its extension) |
+| `script` | string, required |
+| `args` | array of strings |
+| `interpreter` | string |
+| `cwd` | string (default: the config file's directory) |
+| `env` | table of scalars |
+| `autorestart` | bool |
+| `max_restarts`, `restart_delay`, `min_uptime`, `kill_timeout` | integer |
+| `max_memory_restart` | size (`"200M"`, `"1G"`, or bytes) |
+| `kill_signal` | string |
+| `stop_exit_codes` | array of integers |
+| `merge_logs` | bool |
+| `out_log`, `err_log` | string |
+| `log_date_format` | string |
+
+An unknown key is an error, not a shrug — a misspelled `max_memory_restart`
+fails immediately instead of silently leaving the limit off.
+
+**Paths are resolved against the config file, not the working directory.**
+A checked-in `pm3.toml` therefore behaves the same whether pm3 is run from the
+repository root, a subdirectory, or a cron job. `cwd` defaults to the config
+file's directory for the same reason.
+
+A `script` with a slash in it, or one that names a file next to the config, is
+a path. A bare name that is not a file — `sh`, `python3`, `go` — is left alone
+and looked up on `PATH`, exactly as `pm3 start sh` would.
+
+```sh
+pm3 start                  # ./pm3.toml, or the global file
+pm3 start --config prod.toml
+pm3 start pm3.json         # a positional .toml/.json is a config file
+pm3 config apps            # check what would be started
+```
+
+Apps that are already online are left running, so re-running `pm3 start` after
+adding one app to the file is not disruptive; everything else is started, and
+a failure in one app does not abort the rest of the file.
+
+> `pm3 start <script> ...` is unchanged: a single script is still started
+directly, and options after the script are passed to the program, so
+`pm3 start sh -c 'echo hi'` works. Use `--config` when the ambiguity matters.
+
 ## Commands
 
 | Command | Description |
 | --- | --- |
 | `pm3 start <script> [options] [-- args...]` | Start and supervise a process |
-| `pm3 list` (aliases `ls`, `ps`, `status`) | Table of managed processes |
+| `pm3 start [--config <file>]` | Start every app a config file declares |
+| `pm3 list` (aliases `ls`, `ps`, `status`) | Table of managed processes, with running/total counts and total CPU and memory |
 | `pm3 describe <name>` | Full configuration and runtime state |
 | `pm3 stop [name]` | Stop one process, or all when no name is given |
 | `pm3 restart [name]` | Restart one process, or all (resets the restart counter) |
@@ -167,6 +286,7 @@ pm3 delete api
 | `pm3 set logrotate:<key> <value>` | Change the rotation policy |
 | `pm3 config` | Show the active config file and its contents |
 | `pm3 config init [toml\|json] [--force]` | Create a config file |
+| `pm3 config apps` | List the apps the config file declares |
 | `pm3 save` | Persist the process list to `dump.json` |
 | `pm3 resurrect` | Start the processes that were desired online |
 | `pm3 kill` | Stop the daemon (and its processes) |
@@ -176,6 +296,7 @@ pm3 delete api
 
 | Option | Meaning |
 | --- | --- |
+| `--config <file>` | Read the app list from a `pm3.toml` / `pm3.json` instead |
 | `-n`, `--name <name>` | Process name (default: script basename) |
 | `-i`, `--interpreter <cmd>` | Run `<script>` as an argument to `<cmd>` |
 | `--cwd <dir>` | Working directory |
@@ -308,9 +429,15 @@ restarting the daemon.
 
 ### Configuration file
 
-The policy lives in `$PM3_HOME/config.toml` or `$PM3_HOME/config.json`. **Only
-those two syntaxes are accepted** — a config file that is silently ignored is
-worse than a loud error. `logrotate.json` is still read so that an existing
+The policy lives in the **global** file, `$PM3_HOME/config.toml` or
+`$PM3_HOME/config.json` — by default `~/.pm3/config.toml`. It is global because
+the daemon is: one supervisor owns every process on the machine, so one policy
+applies to all of them. A project-local `pm3.toml` is read for its
+*applications*, never for rotation, and a `[logrotate]` table in one is
+rejected rather than quietly ignored.
+
+**Only TOML and JSON are accepted** — a config file that is silently ignored
+is worse than a loud error. `logrotate.json` is still read so that an existing
 install keeps working.
 
 ```toml

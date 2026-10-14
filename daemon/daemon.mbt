@@ -152,6 +152,89 @@ async fn handle_start(
 }
 
 ///|
+/// Overwrite the launch specification of a live app record, keeping the
+/// runtime fields (notably `pm_id`) that identify it.
+fn copy_launch_spec(dst : @pm3.App, src : @pm3.App) -> Unit {
+  dst.name = src.name
+  dst.script = src.script
+  dst.args = src.args
+  dst.interpreter = src.interpreter
+  dst.cwd = src.cwd
+  dst.env = src.env
+  dst.out_log = src.out_log
+  dst.err_log = src.err_log
+  dst.merge_logs = src.merge_logs
+  dst.log_date_format = src.log_date_format
+  dst.autorestart = src.autorestart
+  dst.max_restarts = src.max_restarts
+  dst.restart_delay = src.restart_delay
+  dst.min_uptime = src.min_uptime
+  dst.max_memory_restart = src.max_memory_restart
+  dst.kill_timeout = src.kill_timeout
+  dst.kill_signal = src.kill_signal
+  dst.stop_exit_codes = src.stop_exit_codes
+}
+
+///|
+/// Bring up one app described by a config file, reusing the record of an app
+/// with the same name if there is one.
+fn launch_config_app(
+  group : @async.TaskGroup[Unit],
+  state : DaemonState,
+  app : @pm3.App,
+) -> String {
+  match state.find_by_name(app.name) {
+    Some(managed) => {
+      if managed.app.is_online() {
+        return "\{app.name} is already online (pm_id \{managed.app.pm_id})"
+      }
+      copy_launch_spec(managed.app, app)
+      // An explicit start is a fresh chance: clear the old restart budget.
+      managed.app.restarts = 0
+      managed.app.unstable_restarts = 0
+      start_managed(group, state, managed)
+      "restarted \{app.name} (pm_id \{managed.app.pm_id})"
+    }
+    None => {
+      let managed = state.add(app)
+      start_managed(group, state, managed)
+      "started \{app.name} (pm_id \{managed.app.pm_id})"
+    }
+  }
+}
+
+///|
+/// `pm3 start <config.toml>` — start every app the config file declares.
+///
+/// A name that is already online is left alone rather than restarted, so
+/// re-running the command is not disruptive; anything else is started.
+/// Failures do not abort the rest of the file.
+async fn handle_start_apps(
+  group : @async.TaskGroup[Unit],
+  state : DaemonState,
+  request : @pm3.Request,
+) -> @pm3.Response {
+  if request.args.length() == 0 {
+    return @pm3.Response::failure("start: missing config file")
+  }
+  let apps : Array[@pm3.App] = @json.from_json(@json.parse(request.args[0])) catch {
+    _ => return @pm3.Response::failure("start: could not read the app list")
+  }
+  let lines : Array[String] = []
+  let mut started = 0
+  for app in apps {
+    let message = launch_config_app(group, state, app)
+    if message.has_prefix("started") || message.has_prefix("restarted") {
+      started = started + 1
+    }
+    lines.push("  " + message)
+  }
+  state.save()
+  let summary = "\{started} of \{apps.length()} app(s) from the config file"
+  @pm3.Response::success(summary + "\n" + lines.join("\n"))
+}
+
+///|
 /// Resolve an optional name argument to a list of managed apps.
 fn select_apps(state : DaemonState, request : @pm3.Request) -> Array[Managed] {
   if request.args.length() == 0 {
@@ -193,6 +276,7 @@ async fn dispatch(
       }
     }
     "start" => handle_start(group, state, request)
+    "start_apps" => handle_start_apps(group, state, request)
     "stop" => {
       let apps = select_apps(state, request)
       if apps.length() == 0 {

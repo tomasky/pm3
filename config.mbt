@@ -45,7 +45,7 @@ pub fn config_format_of(path : String) -> ConfigFormat? {
 ///|
 /// The configuration file pm3 writes to when none exists yet.
 pub fn default_config_source() -> ConfigSource {
-  { path: pm3_config_json_path(), format: Json, }
+  { path: pm3_config_toml_path(), format: Toml, }
 }
 
 ///|

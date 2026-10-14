@@ -94,8 +94,15 @@ async fn cmd_list(args : Array[String]) -> Unit {
     "id", "name", "status", "cpu", "mem", "restarts", "uptime", "command",
   ]
   let rows : Array[Array[String]] = []
+  // Totals are accumulated over the running processes only: a stopped one
+  // keeps the last sample it was measured with, and adding that to the total
+  // would report memory that is no longer held.
+  let mut total_cpu = 0.0
+  let mut total_mem = 0L
+  let mut online = 0
   for app in apps {
-    let uptime = if app.is_online() {
+    let running = app.is_online()
+    let uptime = if running {
       @pm3.format_duration(now - app.started_at)
     } else {
       "-"
@@ -104,6 +111,11 @@ async fn cmd_list(args : Array[String]) -> Unit {
       "errored(\{app.exit_code})"
     } else {
       app.status
+    }
+    if running {
+      online = online + 1
+      total_cpu = total_cpu + app.cpu
+      total_mem = total_mem + app.memory
     }
     rows.push([
       app.pm_id.to_string(),
@@ -117,6 +129,12 @@ async fn cmd_list(args : Array[String]) -> Unit {
     ])
   }
   print_line(render_table(headers, rows))
+  print_line(
+    "\{online}/\{apps.length()} online   total cpu " +
+    @pm3.format_fixed(total_cpu, 1) +
+    "%   total mem " +
+    @pm3.format_size(total_mem, precision=2),
+  )
 }
 
 ///|
@@ -261,8 +279,15 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
       i = i + 1
       continue
     }
-    if arg.has_prefix("-") && script.length() > 0 {
-      return Err("unknown option \{arg}")
+    if arg.has_prefix("-") {
+      // Before the script, an unrecognized option is a mistake. After it, it
+      // belongs to the program: `pm3 start sh -c '...'` has to work.
+      if script.length() == 0 {
+        return Err("unknown option \{arg}")
+      }
+      process_args.push(arg)
+      i = i + 1
+      continue
     }
     if script.length() == 0 {
       script = arg
@@ -272,7 +297,9 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
     i = i + 1
   }
   if script.length() == 0 {
-    return Err("start: missing script")
+    return Err(
+      "start: missing script — pass a program to run, or a pm3.toml / pm3.json describing the apps",
+    )
   }
   if env.length() > 0 {
     request.opts.set("env_json", @json.to_json(env).stringify())
@@ -285,8 +312,66 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
 }
 
 ///|
+/// The config file `pm3 start` should read instead of a single script, if any.
+///
+/// An explicit `--config <file>` wins; otherwise a bare `pm3 start` falls back
+/// to the first config file pm3 can find. A positional argument only counts as
+/// a config file when it is named `.toml` or `.json` and actually exists, so
+/// `pm3 start ./server.json` still runs a program.
+///
+/// There is deliberately no `-c` shorthand: `pm3 start sh -c '...'` is a
+/// perfectly ordinary command line and must keep working.
+fn start_config_path(args : Array[String]) -> Result[String?, String] {
+  let mut index = 0
+  while index < args.length() {
+    if args[index] == "--config" {
+      if index + 1 >= args.length() {
+        return Err("option --config requires a value")
+      }
+      return Ok(Some(args[index + 1]))
+    }
+    index = index + 1
+  }
+  if args.length() == 0 {
+    return Ok(@pm3.find_app_config())
+  }
+  if @pm3.is_app_config_file(args[0]) {
+    return Ok(Some(args[0]))
+  }
+  Ok(None)
+}
+
+///|
+/// `pm3 start --config <file>` — start every app the file declares.
+async fn cmd_start_config(path : String) -> Unit {
+  let apps = match @pm3.load_apps_from_file(path) {
+    Ok(apps) => apps
+    Err(message) => {
+      print_error("pm3: \{path}: \{message}")
+      return
+    }
+  }
+  let request = @pm3.Request::new(@pm3.cmd_start_apps)
+  request.args.push(@json.to_json(apps).stringify())
+  let response = call(request)
+  if response.ok {
+    print_line(response.msg)
+  } else {
+    print_error("pm3: \{response.msg}")
+  }
+}
+
+///|
 /// `pm3 start ...`
 async fn cmd_start(args : Array[String]) -> Unit {
+  match start_config_path(args) {
+    Err(message) => {
+      print_error("pm3: \{message}")
+      return
+    }
+    Ok(Some(path)) => return cmd_start_config(path)
+    Ok(None) => ()
+  }
   let request = match parse_start(args) {
     Ok(request) => request
     Err(message) => {
@@ -508,6 +593,25 @@ async fn cmd_config(args : Array[String]) -> Unit {
     }
     return
   }
+  if args.length() >= 1 && args[0] == "apps" {
+    match @pm3.find_app_config() {
+      None =>
+        print_line(
+          "no config file found; create one with 'pm3 config init toml'",
+        )
+      Some(path) =>
+        match @pm3.load_apps_from_file(path) {
+          Err(message) => print_error("pm3: \{path}: \{message}")
+          Ok(apps) => {
+            print_line("\{path} declares \{apps.length()} app(s):")
+            for app in apps {
+              print_line("  \{app.name}  \{app.command_display()}")
+            }
+          }
+        }
+    }
+    return
+  }
   let source = @pm3.active_config_source()
   print_line("config file: \{source.path}")
   match @pm3.read_config_file(source.path) {
@@ -542,6 +646,7 @@ async fn print_help() -> Unit {
     #|
     #|Processes:
     #|  start <script> [options] [-- args...]   start a process
+    #|  start [--config <file>]                 start every app a config file declares
     #|  list | ls                               list managed processes
     #|  describe <name>                         show one process in detail
     #|  stop [name]                             stop one or all processes
@@ -558,6 +663,7 @@ async fn print_help() -> Unit {
     #|  set logrotate:<key> <value>             change the rotation policy
     #|  config                                  show the config file and its contents
     #|  config init [toml|json] [--force]       create a config file
+    #|  config apps                             list the apps the config file declares
     #|
     #|Daemon:
     #|  save                                    persist the process list
@@ -566,6 +672,7 @@ async fn print_help() -> Unit {
     #|  version                                 print the version
     #|
     #|start options:
+    #|      --config <file>            read apps from a pm3.toml / pm3.json
     #|  -n, --name <name>              process name (default: script basename)
     #|  -i, --interpreter <cmd>        run <script> through <cmd>
     #|      --cwd <dir>                working directory
