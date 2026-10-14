@@ -153,6 +153,8 @@ pub fn pm3_state_dir() -> String
 
 pub fn read_config_file(String) -> Result[Json, String]
 
+pub fn render_box(Array[String]?, Array[Array[String]]) -> String
+
 pub fn render_config(LogrotateConfig, ConfigFormat) -> String
 
 pub fn rotated_path(String, String, Bool) -> String

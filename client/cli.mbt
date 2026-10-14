@@ -15,48 +15,9 @@ async fn print_error(text : String) -> Unit {
 }
 
 ///|
-/// Render a simple aligned table.
+/// A bordered table with a header row, in PM2's shape.
 fn render_table(headers : Array[String], rows : Array[Array[String]]) -> String {
-  let cols = headers.length()
-  let widths : Array[Int] = []
-  for i in 0..<cols {
-    widths.push(headers[i].length())
-  }
-  for row in rows {
-    for i in 0..<cols {
-      if i < row.length() && row[i].length() > widths[i] {
-        widths[i] = row[i].length()
-      }
-    }
-  }
-  let buf = StringBuilder()
-  for i in 0..<cols {
-    if i > 0 {
-      buf.write_string("  ")
-    }
-    buf.write_string(@pm3.pad_right(headers[i], widths[i], ' '))
-  }
-  buf.write_string("\n")
-  for i in 0..<cols {
-    if i > 0 {
-      buf.write_string("  ")
-    }
-    for _ in 0..<widths[i] {
-      buf.write_char('-')
-    }
-  }
-  buf.write_string("\n")
-  for row in rows {
-    for i in 0..<cols {
-      if i > 0 {
-        buf.write_string("  ")
-      }
-      let cell = if i < row.length() { row[i] } else { "" }
-      buf.write_string(@pm3.pad_right(cell, widths[i], ' '))
-    }
-    buf.write_string("\n")
-  }
-  buf.to_string()
+  @pm3.render_box(Some(headers), rows)
 }
 
 ///|
@@ -206,11 +167,14 @@ async fn cmd_describe(args : Array[String]) -> Unit {
         },
       ),
     ]
-    print_line("")
+    let rows : Array[Array[String]] = []
     for entry in lines {
       let (key, value) = entry
-      print_line("  " + @pm3.pad_right(key, 20, ' ') + value)
+      rows.push([key, value])
     }
+    print_line("")
+    print_line(" Describing process with id \{app.pm_id} - name \{app.name} ")
+    @stdio.stdout.write(@pm3.render_box(None, rows))
   }
 }
 

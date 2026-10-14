@@ -141,17 +141,32 @@ pm3 start ./server --name api -- --port 8080
 # Environment variables.
 pm3 start ./server --name api -e PORT=8080 -e LOG_LEVEL=info
 
-# Inspect it. The footer totals the running processes.
+# Inspect it. Tables are drawn the way PM2 draws them; the footer totals the
+# running processes.
 pm3 list
-# id  name   status  cpu    mem     restarts  uptime  command
-# --  -----  ------  -----  ------  --------  ------  ------------------
-# 0   worker online  0.1%   24 MB   0         2h14m   ./worker.sh
-# 1   digest online  91.5%  118 MB  3         41m     python3 ./digest.py
+# ┌────┬────────┬────────┬───────┬───────┬──────────┬────────┬────────────────────────────────────┐
+# │ id │ name   │ status │ cpu   │ mem   │ restarts │ uptime │ command                            │
+# ├────┼────────┼────────┼───────┼───────┼──────────┼────────┼────────────────────────────────────┤
+# │ 0  │ digest │ online │ 85.4% │ 11 MB │ 0        │ 5s     │ python3 ./digest.py                │
+# │ 1  │ worker │ online │ 0.0%  │ 2 MB  │ 0        │ 5s     │ sh -c while true; do sleep 1; done │
+# └────┴────────┴────────┴───────┴───────┴──────────┴────────┴────────────────────────────────────┘
 #
-# 2/2 online   total cpu 91.6%   total mem 142.13 MB
+# 2/2 online   total cpu 85.4%   total mem 13.45 MB
 
 pm3 describe api
-pm3 logs api --follow
+#  Describing process with id 0 - name digest
+# ┌────────────────────┬───────────────────────────────────┐
+# │ pm_id              │ 0                                 │
+# │ name               │ digest                            │
+# │ status             │ online                            │
+# │ pid                │ 21021                             │
+# │ command            │ python3 ./digest.py               │
+# │ cwd                │ <inherited>                       │
+# │ out log            │ /root/.pm3/logs/digest-out.log    │
+# │ ...                │                                   │
+# └────────────────────┴───────────────────────────────────┘
+
+pm3 logs digest --follow
 
 # Stop it, remove it.
 pm3 stop api

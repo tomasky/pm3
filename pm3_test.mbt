@@ -206,3 +206,54 @@ test "cron month and weekday names" {
   let dec = @pm3.parse_cron("0 0 25 DEC *").unwrap()
   assert_eq(@pm3.next_cron_fire(dec, 1609459200L, 0), Some(1640390400L))
 }
+
+///|
+test "render_box draws PM2's borders" {
+  let table = @pm3.render_box(Some(["id", "name"]), [
+    ["0", "worker"],
+    ["1", "digest"],
+  ])
+  assert_eq(
+    table,
+    "┌────┬────────┐\n" +
+    "│ id │ name   │\n" +
+    "├────┼────────┤\n" +
+    "│ 0  │ worker │\n" +
+    "│ 1  │ digest │\n" +
+    "└────┴────────┘\n",
+  )
+}
+
+///|
+test "render_box without a header is the shape `pm3 show` prints" {
+  let table = @pm3.render_box(None, [["status", "online"], ["name", "worker"]])
+  assert_eq(
+    table,
+    "┌────────┬────────┐\n" +
+    "│ status │ online │\n" +
+    "│ name   │ worker │\n" +
+    "└────────┴────────┘\n",
+  )
+}
+
+///|
+test "render_box pads short rows and survives empty input" {
+  // A row with fewer cells than there are columns is padded, not shifted.
+  let ragged = @pm3.render_box(Some(["a", "b", "c"]), [["1"], ["1", "2"]])
+  assert_eq(
+    ragged,
+    "┌───┬───┬───┐\n" +
+    "│ a │ b │ c │\n" +
+    "├───┼───┼───┤\n" +
+    "│ 1 │   │   │\n" +
+    "│ 1 │ 2 │   │\n" +
+    "└───┴───┴───┘\n",
+  )
+  assert_eq(@pm3.render_box(None, []), "")
+  assert_eq(@pm3.render_box(Some([]), []), "")
+  // A single column still gets both vertical borders.
+  assert_eq(
+    @pm3.render_box(Some(["x"]), [["1"]]),
+    "┌───┐\n│ x │\n├───┤\n│ 1 │\n└───┘\n",
+  )
+}
