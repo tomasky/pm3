@@ -179,3 +179,47 @@ pub fn format_size_exact(bytes : Int64) -> String {
   }
   bytes.to_string()
 }
+
+///|
+/// Render a byte count the way PM2's `bytesToSize` does: one decimal place,
+/// a lowercase unit and no space — `2.0mb`, `512.0kb`, `1.2gb`, `123b`.
+///
+/// The status tables use this so that `pm3 list` and `pm2 ls` agree on the
+/// number they show for the same process. PM2's own function appends a
+/// trailing space (`'24.1mb '`); that only matters where the value is
+/// concatenated into a sentence, and the tables pad the cell anyway.
+pub fn format_size_pm2(bytes : Int64, precision? : Int) -> String {
+  let p = match precision {
+    Some(p) => p
+    None => 1
+  }
+  let units : Array[(Int64, String)] = [
+    (1024L * 1024L * 1024L * 1024L, "tb"),
+    (1024L * 1024L * 1024L, "gb"),
+    (1024L * 1024L, "mb"),
+    (1024L, "kb"),
+  ]
+  for unit in units {
+    let (factor, name) = unit
+    if bytes >= factor {
+      return format_fixed(bytes.to_double() / factor.to_double(), p) + name
+    }
+  }
+  "\{bytes}b"
+}
+
+///|
+/// Render a CPU percentage the way PM2 does: rounded to one decimal, with a
+/// trailing `.0` dropped — `0%`, `85.4%`, `100%`.
+///
+/// PM2 stores `Math.round(stat.cpu * 10) / 10` and prints it with JavaScript's
+/// default number formatting, which is why a whole percentage has no decimal
+/// point. Matching that keeps the two tools' tables comparable line by line.
+pub fn format_cpu_percent(cpu : Double) -> String {
+  let rounded = (cpu * 10.0).round() / 10.0
+  if rounded == rounded.round() {
+    rounded.to_int64().to_string() + "%"
+  } else {
+    format_fixed(rounded, 1) + "%"
+  }
+}

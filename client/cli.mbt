@@ -82,8 +82,8 @@ async fn cmd_list(args : Array[String]) -> Unit {
       app.pm_id.to_string(),
       @pm3.truncate_text(app.name, 24),
       status,
-      @pm3.format_fixed(app.cpu, 1) + "%",
-      @pm3.format_size(app.memory, precision=0),
+      @pm3.format_cpu_percent(app.cpu),
+      @pm3.format_size_pm2(app.memory),
       app.restarts.to_string(),
       uptime,
       @pm3.truncate_text(app.command_display(), 40),
@@ -92,9 +92,9 @@ async fn cmd_list(args : Array[String]) -> Unit {
   print_line(render_table(headers, rows))
   print_line(
     "\{online}/\{apps.length()} online   total cpu " +
-    @pm3.format_fixed(total_cpu, 1) +
-    "%   total mem " +
-    @pm3.format_size(total_mem, precision=2),
+    @pm3.format_cpu_percent(total_cpu) +
+    "   total mem " +
+    @pm3.format_size_pm2(total_mem),
   )
 }
 
@@ -149,13 +149,13 @@ async fn cmd_describe(args : Array[String]) -> Unit {
       (
         "max memory restart",
         if app.max_memory_restart > 0L {
-          @pm3.format_size(app.max_memory_restart)
+          @pm3.format_size_pm2(app.max_memory_restart)
         } else {
           "<disabled>"
         },
       ),
-      ("memory", @pm3.format_size(app.memory)),
-      ("cpu", @pm3.format_fixed(app.cpu, 1) + "%"),
+      ("memory", @pm3.format_size_pm2(app.memory)),
+      ("cpu", @pm3.format_cpu_percent(app.cpu)),
       ("exit code", app.exit_code.to_string()),
       ("created at", app.created_at.to_string()),
       (
@@ -626,7 +626,7 @@ async fn cmd_config_apps(args : Array[String]) -> Unit {
       if app.max_memory_restart == 0L {
         "-"
       } else {
-        @pm3.format_size(app.max_memory_restart, precision=0)
+        @pm3.format_size_pm2(app.max_memory_restart)
       },
       if app.autorestart {
         "yes"

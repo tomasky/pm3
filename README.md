@@ -147,11 +147,11 @@ pm3 list
 # ┌────┬────────┬────────┬───────┬───────┬──────────┬────────┬────────────────────────────────────┐
 # │ id │ name   │ status │ cpu   │ mem   │ restarts │ uptime │ command                            │
 # ├────┼────────┼────────┼───────┼───────┼──────────┼────────┼────────────────────────────────────┤
-# │ 0  │ digest │ online │ 85.4% │ 11 MB │ 0        │ 5s     │ python3 ./digest.py                │
-# │ 1  │ worker │ online │ 0.0%  │ 2 MB  │ 0        │ 5s     │ sh -c while true; do sleep 1; done │
-# └────┴────────┴────────┴───────┴───────┴──────────┴────────┴────────────────────────────────────┘
+# │ 0  │ digest │ online │ 86.9% │ 11.3mb │ 0        │ 6s     │ python3 ./digest.py                │
+# │ 1  │ worker │ online │ 0%    │ 2.0mb  │ 0        │ 6s     │ sh -c while true; do sleep 1; done │
+# └────┴────────┴────────┴───────┴────────┴──────────┴────────┴────────────────────────────────────┘
 #
-# 2/2 online   total cpu 85.4%   total mem 13.45 MB
+# 2/2 online   total cpu 86.9%   total mem 13.3mb
 
 pm3 describe api
 #  Describing process with id 0 - name digest
@@ -159,11 +159,12 @@ pm3 describe api
 # │ pm_id              │ 0                                 │
 # │ name               │ digest                            │
 # │ status             │ online                            │
-# │ pid                │ 21021                             │
+# │ pid                │ 21557                             │
 # │ command            │ python3 ./digest.py               │
 # │ cwd                │ <inherited>                       │
 # │ out log            │ /root/.pm3/logs/digest-out.log    │
-# │ ...                │                                   │
+# │ memory             │ 11.3mb                            │
+# │ cpu                │ 86.9%                             │
 # └────────────────────┴───────────────────────────────────┘
 
 pm3 logs digest --follow

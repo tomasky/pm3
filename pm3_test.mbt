@@ -257,3 +257,58 @@ test "render_box pads short rows and survives empty input" {
     "┌───┐\n│ x │\n├───┤\n│ 1 │\n└───┘\n",
   )
 }
+
+///|
+test "format_cpu_percent matches PM2's Math.round(cpu * 10) / 10" {
+  // Every expectation below is what node prints for
+  // `Math.round(v * 10) / 10 + '%'`, so the two tools report the same number.
+  let cases : Array[(Double, String)] = [
+    (0.0, "0%"),
+    (0.04, "0%"),
+    (0.05, "0.1%"),
+    (0.44, "0.4%"),
+    (0.45, "0.5%"),
+    (1.0, "1%"),
+    (12.34, "12.3%"),
+    (12.35, "12.4%"),
+    (85.44, "85.4%"),
+    (85.45, "85.5%"),
+    (99.94, "99.9%"),
+    (99.95, "100%"),
+    (100.0, "100%"),
+    (1234.5, "1234.5%"),
+  ]
+  for case in cases {
+    let (value, expected) = case
+    assert_eq(@pm3.format_cpu_percent(value), expected)
+  }
+}
+
+///|
+test "format_size_pm2 matches PM2's bytesToSize(bytes, 1)" {
+  // Expectations are node's `bytesToSize(b, 1)`, minus the trailing space PM2
+  // appends. Note that 1048575 stays in `kb`: PM2 picks the unit by comparing
+  // against the next threshold, so it prints `1024.0kb` rather than `1.0mb`.
+  let cases : Array[(Int64, String)] = [
+    (0L, "0b"),
+    (1L, "1b"),
+    (512L, "512b"),
+    (1023L, "1023b"),
+    (1024L, "1.0kb"),
+    (1025L, "1.0kb"),
+    (1536L, "1.5kb"),
+    (1048575L, "1024.0kb"),
+    (1048576L, "1.0mb"),
+    (1572864L, "1.5mb"),
+    (10485760L, "10.0mb"),
+    (1073741824L, "1.0gb"),
+    (1610612736L, "1.5gb"),
+    (1099511627776L, "1.0tb"),
+    (-5L, "-5b"),
+  ]
+  for case in cases {
+    let (value, expected) = case
+    assert_eq(@pm3.format_size_pm2(value), expected)
+  }
+  assert_eq(@pm3.format_size_pm2(1536L, precision=0), "2kb")
+}
