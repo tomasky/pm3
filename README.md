@@ -113,10 +113,11 @@ moon test --target native
 
 `.github/workflows/release.yml` builds one binary per target on its own runner
 (MoonBit's native backend compiles through the system C compiler, so it is not
-cross-compiled), smoke-tests it, attaches it plus a `.tar.gz` and a `.sha256`
-to a GitHub Release, and then publishes `@tomasko/pm3` to npm — after the
-release exists, so the asset is there for the first user to pull. Pushing a tag
-is the whole trigger:
+cross-compiled), smoke-tests it, and attaches the binary plus a `.sha256` to a
+GitHub Release — two assets per target, no archive, because both installers
+fetch the bare binary and set the mode themselves. It then publishes
+`@tomasko/pm3` to npm, after the release exists, so the asset is there for the
+first user to pull. Pushing a tag is the whole trigger:
 
 ```sh
 git tag v0.1.1 && git push origin v0.1.1

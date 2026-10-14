@@ -30,8 +30,21 @@ jobs:
       - name: Check (warnings are errors)
         run: moon check --target native --deny-warn
 
-      - name: Format check
-        run: moon fmt --check
+      # `moon fmt` chooses its canonical backend itself and formats for
+      # wasm-gc regardless of `preferred_target`, which the module sets to
+      # native. The formatter therefore rewrites `Int` to `Int32` — including
+      # in packages marked `supported_targets = "+native"` — and a hard gate
+      # would fail on a difference that is not this project's to fix. Nor can
+      # the toolchain be pinned around it: the installer serves only `latest`
+      # and older versions are dropped from the CDN. So report, do not block;
+      # `--deny-warn` and the tests below are the gates that do block.
+      - name: Format check (advisory)
+        run: |
+          if moon fmt --check; then
+            echo "::notice title=moon fmt::no formatting differences"
+          else
+            echo "::warning title=moon fmt::differences reported above; not failing the build"
+          fi
 
       - name: Test
         run: moon test --target native
@@ -55,10 +68,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Check every script the package ships, so adding one cannot silently
+      # leave the check pointing at a file that no longer exists.
       - name: Syntax check
         run: |
-          node --check npmjs/bin/pm3.js
-          node --check npmjs/lib/binary.js
+          set -eu
+          find npmjs -name '*.js' -not -path '*/node_modules/*' -print0 |
+            while IFS= read -r -d '' script; do
+              echo "node --check $script"
+              node --check "$script"
+            done
       - name: Unit tests
         working-directory: npmjs
         run: node --test

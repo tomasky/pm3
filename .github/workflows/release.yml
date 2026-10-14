@@ -77,6 +77,11 @@ jobs:
           cp _build/native/release/build/cmd/main/main.exe "dist/pm3-${{ matrix.target }}"
           chmod 755 "dist/pm3-${{ matrix.target }}"
 
+      # Only two assets per target: the binary and its checksum. Both the
+      # npm launcher and install.sh fetch the bare asset and set the mode
+      # themselves, so an archive would be a third thing to keep in sync and
+      # nothing would read it. GitHub already offers "Source code (tar.gz)"
+      # for anyone who wants an archive of the tag.
       - name: Stage assets
         run: |
           set -eu
@@ -84,7 +89,6 @@ jobs:
           file "dist/$asset" || true
           (cd dist && shasum -a 256 "$asset" > "$asset.sha256" 2>/dev/null \
             || sha256sum "$asset" > "$asset.sha256")
-          tar -C dist -czf "dist/$asset.tar.gz" "$asset"
           ls -l dist
 
       - name: Smoke test
@@ -99,7 +103,6 @@ jobs:
           path: |
             dist/pm3-${{ matrix.target }}
             dist/pm3-${{ matrix.target }}.sha256
-            dist/pm3-${{ matrix.target }}.tar.gz
           if-no-files-found: error
 
   release:
