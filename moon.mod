@@ -11,7 +11,7 @@ readme = "README.md"
 
 repository = "https://github.com/tomasky/pm3"
 
-license = "MIT"
+license = "Apache-2.0"
 
 keywords = [
   "process-manager",
