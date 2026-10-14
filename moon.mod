@@ -5,7 +5,7 @@
 
 name = "kupas/pm3"
 
-version = "0.1.0"
+version = "0.1.1"
 
 readme = "README.md"
 
@@ -13,9 +13,17 @@ repository = "https://github.com/tomasky/pm3"
 
 license = "MIT"
 
-keywords = [ "process-manager", "pm2", "logrotate", "supervisor" ]
+keywords = [
+  "process-manager",
+  "pm2",
+  "supervisor",
+  "daemon",
+  "logrotate",
+  "log-rotation",
+  "cli",
+]
 
-description = "A language-agnostic process manager with built-in log rotation"
+description = "A language-agnostic process manager (PM2-like) with built-in log rotation"
 
 preferred_target = "native"
 

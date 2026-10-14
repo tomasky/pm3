@@ -33,6 +33,48 @@ pm3 stop worker
 - **Single static binary.** One executable provides both the client and the
   daemon (`pm3 daemon` is the internal entry point).
 
+## Install
+
+```sh
+# npm, pnpm, yarn or bun. The launcher downloads the native binary for this
+# platform on first run; nothing is downloaded at install time.
+npm install -g @tomasko/pm3
+
+# Install script, no Node.js required.
+curl -LsSf https://raw.githubusercontent.com/tomasky/pm3/master/install.sh | bash
+
+# Or build from source, see below.
+```
+
+The Linux builds are linked **statically against musl**, so one binary runs on
+any distribution regardless of its glibc version.
+
+| Platform | Release asset |
+| --- | --- |
+| Linux x86-64 | `pm3-linux-x86_64` (static) |
+| Linux arm64 | `pm3-linux-aarch64` (static) |
+| macOS Apple silicon | `pm3-darwin-aarch64` |
+
+The npm package ships a launcher rather than the binary, and deliberately
+**declares no `postinstall`**. Since npm 12 dependency install scripts are
+blocked unless the user opts in, and pnpm 12 fails a *project* install outright
+with `ERR_PNPM_IGNORED_BUILDS` when a dependency declares one:
+
+```console
+$ pnpm add @tomasko/pm3
+Error: ERR_PNPM_IGNORED_BUILDS
+  × adding a new package
+  ╰─▶ Ignored build scripts: @tomasko/pm3@0.1.1
+```
+
+Downloading lazily from the launcher works under npm, pnpm, yarn, bun, `npx`
+and `--ignore-scripts`, because it is an ordinary command rather than an
+install hook. See [`npmjs/README.md`](npmjs/README.md) for the environment
+variables that redirect the download (`PM3_DOWNLOAD_BASE`, `PM3_BINARY`, …).
+
+The install script takes `--version`, `--install-dir` and `--no-verify`, and
+verifies the published SHA-256 before installing.
+
 ## Build
 
 ```sh
@@ -48,11 +90,40 @@ moon build --target native
 ./_build/native/debug/build/cmd/main/main.exe list
 ```
 
+### Static Linux build
+
+`scripts/build-linux-static.sh` produces a fully static binary with musl, which
+is what the release workflow publishes. A glibc build records the build
+machine's symbol versions, so a binary built on a new runner refuses to start
+on an older distribution (`GLIBC_2.38 not found`); linking against musl
+statically removes that entire class of problem.
+
+```sh
+sudo apt-get install musl-tools
+./scripts/build-linux-static.sh dist/pm3-linux-x86_64
+```
+
 Run the unit tests with:
 
 ```sh
 moon test --target native
 ```
+
+## Releases
+
+`.github/workflows/release.yml` builds one binary per target on its own runner
+(MoonBit's native backend compiles through the system C compiler, so it is not
+cross-compiled), smoke-tests it, attaches it plus a `.tar.gz` and a `.sha256`
+to a GitHub Release, and then publishes `@tomasko/pm3` to npm — after the
+release exists, so the asset is there for the first user to pull. Pushing a tag
+is the whole trigger:
+
+```sh
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+The npm job is skipped when `NPM_TOKEN` is not configured, so a fork can still
+cut releases.
 
 ## Quick start
 
@@ -94,6 +165,8 @@ pm3 delete api
 | `pm3 reloadLogs` | Rotate every managed log now |
 | `pm3 logrotate` | Show the rotation policy |
 | `pm3 set logrotate:<key> <value>` | Change the rotation policy |
+| `pm3 config` | Show the active config file and its contents |
+| `pm3 config init [toml\|json] [--force]` | Create a config file |
 | `pm3 save` | Persist the process list to `dump.json` |
 | `pm3 resurrect` | Start the processes that were desired online |
 | `pm3 kill` | Stop the daemon (and its processes) |
@@ -149,7 +222,7 @@ pm3 delete api
 ```
 ~/.pm3/
 ├── dump.json          # serialized process table
-├── logrotate.json     # rotation policy
+├── config.toml        # configuration (or config.json)
 ├── daemon.port        # ephemeral TCP port (while running)
 ├── daemon.pid         # daemon pid (while running)
 ├── pm3.log            # daemon's own stdout/stderr
@@ -230,8 +303,46 @@ pm3 set logrotate:rotate_interval "0 3 * * *"
 | `tz` | system | Timezone for file names (`UTC+8`, `+05:30`, or an IANA name) |
 | `rotate_module` | `true` | Reserved; kept for `pm2-logrotate` compatibility |
 
-The policy is persisted to `~/.pm3/logrotate.json` and shared by every sink, so
-changes take effect immediately without restarting the daemon.
+The policy is shared by every sink, so changes take effect immediately without
+restarting the daemon.
+
+### Configuration file
+
+The policy lives in `$PM3_HOME/config.toml` or `$PM3_HOME/config.json`. **Only
+those two syntaxes are accepted** — a config file that is silently ignored is
+worse than a loud error. `logrotate.json` is still read so that an existing
+install keeps working.
+
+```toml
+# ~/.pm3/config.toml
+[logrotate]
+max_size = "100M"
+retain = 14
+compress = true
+compression_level = 6
+rotate_interval = "0 3 * * *"
+tz = "UTC+8"
+```
+
+```json
+{
+  "logrotate": {
+    "max_size": "100M",
+    "retain": 14,
+    "compress": true
+  }
+}
+```
+
+Both are parsed into the same tree, so they behave identically. `pm3 config`
+prints the file in use and its contents; `pm3 config init toml` (or `json`)
+creates one seeded with the current policy; `pm3 set logrotate:...` rewrites
+whichever file is active, keeping its syntax.
+
+Sizes may be written as `100M`, `1G`, `512K` or a plain byte count, and a value
+written back is always **exact**: `min_size = 1000` stays `1000` rather than
+rounding to `0.98K`. Unknown keys are an error rather than being ignored, so a
+typo fails loudly instead of quietly doing nothing.
 
 `rotate_interval` accepts the usual cron syntax (5 or 6 fields, names,
 ranges, steps, lists) plus `@hourly`/`@daily`/`@weekly`/`@monthly`/`@yearly`.
@@ -261,6 +372,10 @@ When both day-of-month and day-of-week are restricted, the schedule fires if
 | --- | --- |
 | `PM3_HOME` | State directory (default `$HOME/.pm3`) |
 
+The launcher and installer add their own variables (`PM3_BINARY`,
+`PM3_CACHE_DIR`, `PM3_VERSION`, `PM3_DOWNLOAD_BASE`, `PM3_REPO`, …); they are
+documented in [`npmjs/README.md`](npmjs/README.md).
+
 ## Limitations
 
 - Native (`--target native`) only: it needs POSIX process, signal and file
@@ -268,8 +383,9 @@ When both day-of-month and day-of-week are restricted, the schedule fires if
 - Linux/macOS: process memory and CPU are read from `/proc`, so resource
   reporting is Linux-specific. Supervision itself is POSIX.
 - `kill_signal` accepts `SIGTERM`, `SIGINT`, `SIGHUP` and `SIGKILL`.
-- `compression_level` is validated and stored, but the gzip encoder currently
-  uses a fixed level.
+- `compression_level` is validated and stored, but the built-in gzip encoder
+  uses a fixed level. The system `gzip` binary is preferred when available, and
+  that one does honour the level.
 - `--log-date-format` is accepted and stored but line timestamping is not yet
   applied to log output.
 

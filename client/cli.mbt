@@ -2,7 +2,7 @@
 /// The pm3 command-line interface.
 
 ///|
-let cli_version : String = "0.1.0"
+let cli_version : String = "0.1.1"
 
 ///|
 async fn print_line(text : String) -> Unit {
@@ -479,6 +479,47 @@ async fn cmd_set(args : Array[String]) -> Unit {
 }
 
 ///|
+/// `pm3 config` — show the active configuration file, or create one with
+/// `pm3 config init [toml|json]`.
+///
+/// This one command deliberately does not talk to the daemon: configuration is
+/// on disk, and a user who has a broken config needs to be able to read it
+/// before anything else starts.
+async fn cmd_config(args : Array[String]) -> Unit {
+  if args.length() >= 1 && args[0] == "init" {
+    let format = if args.length() >= 2 {
+      match args[1] {
+        "toml" => @pm3.Toml
+        "json" => @pm3.Json
+        other => {
+          print_error(
+            "pm3: unknown config format '\{other}'; expected toml or json",
+          )
+          return
+        }
+      }
+    } else {
+      @pm3.default_config_source().format
+    }
+    let force = args.contains("--force")
+    match @pm3.write_default_config(format, force) {
+      Ok(path) => print_line("wrote \{path}")
+      Err(message) => print_error("pm3: \{message}")
+    }
+    return
+  }
+  let source = @pm3.active_config_source()
+  print_line("config file: \{source.path}")
+  match @pm3.read_config_file(source.path) {
+    Ok(json) => print_line(json.stringify(indent=2))
+    Err(_) =>
+      print_line(
+        @pm3.render_config(@pm3.default_logrotate_config(), source.format),
+      )
+  }
+}
+
+///|
 /// `pm3 kill` — stop the daemon (leaves child processes stopped).
 async fn cmd_kill() -> Unit {
   let response = call(@pm3.Request::new("kill"))
@@ -515,6 +556,8 @@ async fn print_help() -> Unit {
     #|Log rotation:
     #|  logrotate                               show the rotation policy
     #|  set logrotate:<key> <value>             change the rotation policy
+    #|  config                                  show the config file and its contents
+    #|  config init [toml|json] [--force]       create a config file
     #|
     #|Daemon:
     #|  save                                    persist the process list
@@ -539,6 +582,9 @@ async fn print_help() -> Unit {
     #|      --kill-signal <signal>     graceful signal (default SIGTERM)
     #|      --stop-exit-codes <a,b>    exit codes that stop restarts
     #|  -e, --env KEY=VALUE            set an environment variable
+    #|
+    #|Configuration lives in $PM3_HOME/config.toml or config.json (TOML and
+    #|JSON only); `logrotate.json` is still read for compatibility.
     #|
     #|Log rotation options (pm3 set logrotate:<key> <value>):
     #|  max_size, min_size, retain, max_age_days, compress, compression_level,
@@ -591,6 +637,7 @@ pub async fn main_cli() -> Unit {
     "resurrect" => cmd_simple("resurrect")
     "logrotate" | "log-rotate" => cmd_logrotate(rest)
     "set" => cmd_set(rest)
+    "config" => cmd_config(rest)
     "kill" => cmd_kill()
     "version" | "--version" | "-v" => cmd_version()
     "help" | "--help" | "-h" => print_help()

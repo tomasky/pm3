@@ -62,3 +62,15 @@ pub extend Response with ToJson::{to_json}
 
 ///|
 pub extend Response with @json.FromJson::{from_json}
+
+///|
+pub extend ConfigFormat with Eq::{not_equal, equal}
+
+///|
+pub extend ConfigFormat with @debug.Debug::{to_repr}
+
+///|
+pub extend ConfigSource with Eq::{not_equal, equal}
+
+///|
+pub extend ConfigSource with @debug.Debug::{to_repr}

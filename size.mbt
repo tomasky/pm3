@@ -157,3 +157,25 @@ pub fn format_size(bytes : Int64, precision? : Int) -> String {
   }
   "\{bytes} B"
 }
+
+///|
+/// Render a byte count so that `parse_size` reads back exactly the same number.
+///
+/// `format_size` rounds to two decimals, which is right for a status column but
+/// wrong for a config file: it would turn `1000` into `1003` on the next load.
+/// This only uses a unit when the value is an exact multiple, and otherwise
+/// falls back to a plain byte count.
+pub fn format_size_exact(bytes : Int64) -> String {
+  let units : Array[(Int64, String)] = [
+    (1024L * 1024L * 1024L, "G"),
+    (1024L * 1024L, "M"),
+    (1024L, "K"),
+  ]
+  for unit in units {
+    let (factor, name) = unit
+    if bytes != 0L && bytes % factor == 0L {
+      return (bytes / factor).to_string() + name
+    }
+  }
+  bytes.to_string()
+}

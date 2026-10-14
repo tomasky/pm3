@@ -1,0 +1,48 @@
+{
+  "name": "@tomasko/pm3",
+  "version": "0.1.1",
+  "description": "A language-agnostic process manager with built-in log rotation, in the spirit of PM2 — manages any background service, not just Node.js.",
+  "license": "MIT",
+  "bin": {
+    "pm3": "bin/pm3.js"
+  },
+  "files": [
+    "bin/pm3.js",
+    "lib.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tomasky/pm3.git"
+  },
+  "homepage": "https://github.com/tomasky/pm3",
+  "bugs": "https://github.com/tomasky/pm3/issues",
+  "keywords": [
+    "pm3",
+    "pm2",
+    "process-manager",
+    "process",
+    "supervisor",
+    "daemon",
+    "logs",
+    "log-rotation",
+    "logrotate",
+    "forever",
+    "moonbit"
+  ],
+  "preferGlobal": true
+}

@@ -21,35 +21,6 @@ async fn ensure_dirs() -> Unit {
 }
 
 ///|
-/// Read the persisted rotation policy, falling back to defaults.
-pub async fn load_logrotate_config() -> @pm3.LogrotateConfig {
-  let config = @pm3.default_logrotate_config()
-  let path = @pm3.pm3_logrotate_config_path()
-  let exists = @fs.exists(path) catch { _ => false }
-  if !exists {
-    return config
-  }
-  let text = @fs.read_file(path).text() catch { _ => return config }
-  let stored : @pm3.LogrotateConfig = @json.from_json(@json.parse(text)) catch {
-    _ => return config
-  }
-  stored
-}
-
-///|
-/// Persist the rotation policy.
-pub async fn save_logrotate_config(config : @pm3.LogrotateConfig) -> Unit {
-  let text = @json.to_json(config).stringify()
-  @fs.write_file(
-    @pm3.pm3_logrotate_config_path(),
-    text,
-    create_mode=@fs.CreateOrTruncate,
-  ) catch {
-    _ => ()
-  }
-}
-
-///|
 /// Derive a default app name from a script path.
 fn derive_app_name(script : String) -> String {
   let base = @pm3.path_basename(script)
@@ -325,13 +296,22 @@ async fn dispatch(
         return @pm3.Response::failure("usage: set logrotate:<key> <value>")
       }
       match state.config.set_field(request.args[0], request.args[1]) {
-        Ok(_) => {
-          save_logrotate_config(state.config)
-          @pm3.Response::success("\{request.args[0]} = \{request.args[1]}")
-        }
+        Ok(_) =>
+          match @pm3.save_logrotate_config(state.config, state.config_source) {
+            Ok(_) =>
+              @pm3.Response::success("\{request.args[0]} = \{request.args[1]}")
+            Err(message) => @pm3.Response::failure(message)
+          }
         Err(message) => @pm3.Response::failure(message)
       }
     }
+    "get_config" =>
+      @pm3.Response::success_data(
+        state.config_source.path,
+        Json::string(
+          @pm3.render_config(state.config, state.config_source.format),
+        ),
+      )
     "reset" => {
       for _, managed in state.ordered() {
         stop_managed(state, managed)
@@ -407,8 +387,8 @@ pub async fn run_daemon() -> Unit {
   ) catch {
     _ => ()
   }
-  let config = load_logrotate_config()
-  let state = DaemonState::new(config)
+  let (config, config_source) = @pm3.load_logrotate_config()
+  let state = DaemonState::new(config, config_source)
   state.load()
   normalize_loaded_state(state)
   @async.with_task_group(group => {

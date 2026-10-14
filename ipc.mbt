@@ -48,6 +48,9 @@ pub let cmd_kill : String = "kill"
 pub let cmd_get_logrotate : String = "get_logrotate"
 
 ///|
+pub let cmd_get_config = "get_config"
+
+///|
 pub let cmd_set_logrotate : String = "set_logrotate"
 
 ///|

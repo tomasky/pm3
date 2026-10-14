@@ -88,8 +88,31 @@ pub fn pm3_dump_path() -> String {
 
 ///|
 /// Path of the persisted log-rotation configuration.
+///
+/// `logrotate.json` is the historical name and is still read, but new installs
+/// are steered at `config.toml` / `config.json`, which can hold more than the
+/// rotation policy.
 pub fn pm3_logrotate_config_path() -> String {
   path_join(pm3_home(), "logrotate.json")
+}
+
+///|
+/// Path of the TOML configuration file.
+pub fn pm3_config_toml_path() -> String {
+  path_join(pm3_home(), "config.toml")
+}
+
+///|
+/// Path of the JSON configuration file.
+pub fn pm3_config_json_path() -> String {
+  path_join(pm3_home(), "config.json")
+}
+
+///|
+/// Configuration files pm3 looks for, in order of precedence. Only TOML and
+/// JSON are supported; the last entry is the pre-`config.*` name.
+pub fn pm3_config_candidates() -> Array[String] {
+  [pm3_config_toml_path(), pm3_config_json_path(), pm3_logrotate_config_path()]
 }
 
 ///|

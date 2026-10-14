@@ -1,5 +1,7 @@
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/x/fs",
+  "moonbitlang/core/double",
   "moonbitlang/core/env",
   "moonbitlang/core/json",
   "moonbitlang/core/string",

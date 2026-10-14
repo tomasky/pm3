@@ -25,6 +25,8 @@ pub struct DaemonState {
   /// Rotation policy. Never reassigned, only mutated in place so that sinks
   /// holding a reference see configuration changes immediately.
   config : @pm3.LogrotateConfig
+  /// The config file `pm3 set` writes back to, and its syntax.
+  config_source : @pm3.ConfigSource
   /// Log sinks keyed by absolute path.
   sinks : Map[String, LogSink]
   /// Rotated files waiting to be gzipped.
@@ -34,12 +36,16 @@ pub struct DaemonState {
 
 ///|
 /// Create empty state for the given policy.
-pub fn DaemonState::new(config : @pm3.LogrotateConfig) -> DaemonState {
+pub fn DaemonState::new(
+  config : @pm3.LogrotateConfig,
+  config_source : @pm3.ConfigSource,
+) -> DaemonState {
   {
     apps: Map([]),
     next_id: 0,
     running: true,
     config,
+    config_source,
     sinks: Map([]),
     compress_queue: @aqueue.Queue::Queue(kind=@aqueue.Unbounded),
     port: 0,
