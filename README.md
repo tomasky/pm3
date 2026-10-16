@@ -45,6 +45,10 @@ pm3 stop worker
 # platform on first run; nothing is downloaded at install time.
 npm install -g @tomasko/pm3
 
+# From the MoonBit package registry, if the MoonBit toolchain is already
+# installed. Builds from source and installs `pm3` to ~/.moon/bin.
+moon install kupas/pm3/cmd/pm3
+
 # Install script, no Node.js required.
 curl -LsSf https://raw.githubusercontent.com/tomasky/pm3/master/install.sh | bash
 
@@ -84,7 +88,7 @@ verifies the published SHA-256 before installing.
 
 ```sh
 moon build --target native --release
-# the binary is at _build/native/release/build/cmd/main/main.exe
+# the binary is at _build/native/release/build/cmd/pm3/pm3.exe
 ```
 
 Copy it somewhere on `$PATH` as `pm3`. During development the debug build
@@ -92,7 +96,7 @@ works too:
 
 ```sh
 moon build --target native
-./_build/native/debug/build/cmd/main/main.exe list
+./_build/native/debug/build/cmd/pm3/pm3.exe list
 ```
 
 ### Static Linux build

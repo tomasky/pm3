@@ -74,7 +74,7 @@ jobs:
         run: |
           moon build --target native --release
           mkdir -p dist
-          cp _build/native/release/build/cmd/main/main.exe "dist/pm3-${{ matrix.target }}"
+          cp _build/native/release/build/cmd/pm3/pm3.exe "dist/pm3-${{ matrix.target }}"
           chmod 755 "dist/pm3-${{ matrix.target }}"
 
       # Only two assets per target: the binary and its checksum. Both the
