@@ -1,6 +1,6 @@
 {
   "name": "@tomasko/pm3",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A language-agnostic process manager with built-in log rotation, in the spirit of PM2 — manages any background service, not just Node.js.",
   "license": "Apache-2.0",
   "bin": {
