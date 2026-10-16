@@ -295,6 +295,14 @@ a failure in one app does not abort the rest of the file.
 directly, and options after the script are passed to the program, so
 `pm3 start sh -c 'echo hi'` works. Use `--config` when the ambiguity matters.
 
+A single script is resolved against the directory the command was run in, the
+way PM2 resolves it in the CLI — the daemon's working directory is never
+consulted. `pm3 start app.js` therefore records `/here/app.js` and runs in
+`/here` whether or not the daemon happens to live there, and the saved record
+keeps working after `pm3 update` restarts the daemon from somewhere else.
+A bare name that is no file at all is still left for the daemon: it may be a
+managed process (`pm3 start worker`) or a command looked up on `PATH`.
+
 ## Interpreters
 
 PM2 never runs a script naked unless the file is a real executable, and pm3
@@ -366,6 +374,7 @@ being taken as a script path.
 | `pm3 config apps [--config <file>] [--json]` | Show what `pm3 start` would start, without starting it |
 | `pm3 save` | Persist the process list to `dump.json` |
 | `pm3 resurrect` | Start the processes that were desired online |
+| `pm3 update` | Restart the daemon with this build, then resurrect what was online |
 | `pm3 kill` | Stop the daemon (and its processes) |
 | `pm3 version` | Print the version |
 
@@ -594,6 +603,16 @@ When both day-of-month and day-of-week are restricted, the schedule fires if
   loaded table starts out stopped; run `pm3 resurrect` to bring back the
   processes that were desired online. Any orphan from a hard daemon death is
   terminated first, so a service is never started twice.
+- `pm3 resurrect` resolves each record the way `pm3 start` does before running
+  it — an older pm3 could leave a record without an interpreter, which would
+  otherwise be executed directly and fail without explanation — and reports a
+  record it cannot resolve instead of dropping it.
+- A daemon left over from another build announces itself before the next
+  command runs, with PM2's out-of-date warning; `pm3 update` is the fix it
+  points at: save the list, kill the daemon, launch this build, resurrect.
+- Records written by an older pm3 (including a dump from before a field
+  existed) are read with the missing values filled in, so upgrading never
+  empties the process list over one missing key.
 
 ## Environment variables
 

@@ -279,8 +279,12 @@ async fn handle_start_apps(
   if request.args.length() == 0 {
     return @pm3.Response::failure("start: missing config file")
   }
-  let apps : Array[@pm3.App] = @json.from_json(@json.parse(request.args[0])) catch {
+  let parsed = @json.parse(request.args[0]) catch {
     _ => return @pm3.Response::failure("start: could not read the app list")
+  }
+  let apps = match @pm3.app_records_from_json(parsed) {
+    Some(apps) => apps
+    None => return @pm3.Response::failure("start: could not read the app list")
   }
   let lines : Array[String] = []
   let mut started = 0
@@ -325,6 +329,7 @@ async fn dispatch(
 ) -> @pm3.Response {
   match request.cmd {
     "ping" => @pm3.Response::success("pong")
+    "version" => @pm3.Response::success(@pm3.pm3_version)
     "list" => {
       let apps : Array[@pm3.App] = []
       for managed in state.ordered() {
@@ -423,9 +428,20 @@ async fn dispatch(
     }
     "resurrect" => {
       let mut started = 0
+      let failures : Array[String] = []
       for _, managed in state.ordered() {
         let app = managed.app
         if app.desired_state == @pm3.status_online && !app.is_online() {
+          // A record written by an older pm3 may be missing what a start
+          // fills in — the interpreter above all, without which the script
+          // would be executed directly and fail without explanation.
+          match resolve_start_spec(app) {
+            Err(message) => {
+              failures.push("\{app.name}: \{message}")
+              continue
+            }
+            Ok(_) => ()
+          }
           // Clear an orphan left behind by a hard daemon death so we do not
           // end up with two copies of the same service.
           if app.pid > 0 && pid_alive(app.pid) {
@@ -440,7 +456,14 @@ async fn dispatch(
         }
       }
       state.save()
-      @pm3.Response::success("resurrected \{started} process(es)")
+      let message = "resurrected \{started} process(es)"
+      if failures.length() == 0 {
+        @pm3.Response::success(message)
+      } else {
+        @pm3.Response::success(
+          message + "; could not resolve " + failures.join(", "),
+        )
+      }
     }
     "get_logrotate" =>
       @pm3.Response::success_data("", @json.to_json(state.config))

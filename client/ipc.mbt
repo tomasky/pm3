@@ -77,8 +77,80 @@ pub async fn start_daemon() -> Unit {
 }
 
 ///|
-/// Send a request, starting the daemon on first use.
+/// Whether this client already compared its build with the daemon's. The
+/// daemon cannot change version under a running command, so one check is
+/// enough.
+let daemon_version_checked : Ref[Bool] = Ref(false)
+
+///|
+/// PM2's warning for a daemon left over from another build, with pm3's
+/// wording and the command that fixes it.
+fn version_skew_warning(remote : String, own : String) -> String {
+  let outdated = ">>>> In-memory pm3 is out-of-date, do:"
+  let fix = ">>>> $ pm3 update"
+  let buf = StringBuilder()
+  buf.write_string("\n")
+  buf.write_string(if colors() { @pm3.red_bold(outdated) } else { outdated })
+  buf.write_string("\n")
+  buf.write_string(if colors() { @pm3.red_bold(fix) } else { fix })
+  buf.write_string("\n")
+  buf.write_string(
+    "In memory pm3 version: " +
+    (if colors() { @pm3.blue_bold(remote) } else { remote }),
+  )
+  buf.write_string("\n")
+  buf.write_string(
+    "Local pm3 version: " +
+    (if colors() { @pm3.blue_bold(own) } else { own }),
+  )
+  buf.write_string("\n\n")
+  buf.to_string()
+}
+
+///|
+/// Warn, the way PM2 does, when the daemon answering requests comes from a
+/// different build: an old daemon silently ignores options it does not know,
+/// and this client may not be able to read every field of its answers. Never
+/// starts a daemon — one this client launches is its own build — and gives up
+/// quietly when nothing answers.
+async fn warn_if_daemon_is_stale() -> Unit {
+  if daemon_version_checked.val {
+    return
+  }
+  daemon_version_checked.val = true
+  let request = @pm3.Request::new(@pm3.cmd_version)
+  match @async.with_timeout_opt(10000, () => try_call(request)) {
+    Some(Some(response)) => {
+      // A daemon old enough to not know `version` answers with a failure.
+      let remote = if response.ok { response.msg } else { "unknown" }
+      if remote != @pm3.pm3_version {
+        @stdio.stdout.write(version_skew_warning(remote, @pm3.pm3_version))
+      }
+    }
+    _ => ()
+  }
+}
+
+///|
+/// Block until the daemon stops answering, used after `kill` so a new daemon
+/// does not race the old one for the home.
+async fn wait_for_daemon_exit() -> Unit {
+  for _ in 0..<50 {
+    match @async.with_timeout_opt(1000, () => try_call(@pm3.Request::new(@pm3.cmd_ping))) {
+      Some(None) => return
+      _ => @async.sleep(100)
+    }
+  }
+}
+
+///|
+/// Send a request, starting the daemon on first use. A daemon left over from
+/// another build is announced before the request goes out (except for `kill`,
+/// which is already on its way to that daemon).
 pub async fn call(request : @pm3.Request) -> @pm3.Response {
+  if request.cmd != @pm3.cmd_kill {
+    warn_if_daemon_is_stale()
+  }
   match @async.with_timeout_opt(10000, () => try_call(request)) {
     Some(Some(response)) => response
     _ => {

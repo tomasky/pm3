@@ -121,3 +121,27 @@ test "log_prefix colours the whole id|name column" {
   assert_eq(log_prefix(Daemon, "PM3", 10), "PM3        | ")
   @pm3.set_colors_enabled(before)
 }
+
+///|
+/// The stale-daemon warning keeps PM2's shape — the two `>>>>` lines in red,
+/// the versions in blue — because users look for the `$ pm3 update` line.
+test "version skew warning follows PM2's shape" {
+  let before = @pm3.colors_enabled()
+  @pm3.set_colors_enabled(false)
+  assert_eq(
+    version_skew_warning("0.1.2", "0.1.4"),
+    "\n>>>> In-memory pm3 is out-of-date, do:\n" +
+    ">>>> $ pm3 update\n" +
+    "In memory pm3 version: 0.1.2\n" +
+    "Local pm3 version: 0.1.4\n\n",
+  )
+  @pm3.set_colors_enabled(true)
+  let coloured = version_skew_warning("0.1.2", "0.1.4")
+  assert_true(
+    coloured.contains(
+      "\u{1b}[1m\u{1b}[31m>>>> In-memory pm3 is out-of-date, do:\u{1b}[39m\u{1b}[22m",
+    ),
+  )
+  assert_true(coloured.contains("\u{1b}[1m\u{1b}[34m0.1.2\u{1b}[39m\u{1b}[22m"))
+  @pm3.set_colors_enabled(before)
+}

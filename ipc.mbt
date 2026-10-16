@@ -12,6 +12,11 @@
 pub let cmd_ping : String = "ping"
 
 ///|
+/// Answered with the daemon's build; a client older than this command gets
+/// "unknown command" back, which also means the daemon is not its build.
+pub let cmd_version : String = "version"
+
+///|
 pub let cmd_list : String = "list"
 
 ///|

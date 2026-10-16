@@ -45,6 +45,43 @@ pub fn path_join(left : String, right : String) -> String {
 }
 
 ///|
+/// Resolve a `pm3 start <script>` argument against the directory the command
+/// was run in.
+///
+/// PM2 does this in the CLI — `cwd = path.resolve(process.cwd(), cwd)` and
+/// `pm_exec_path = path.resolve(cwd, app.script)` — because the daemon's own
+/// working directory is an implementation detail: it is wherever the daemon
+/// happened to be launched from, which `pm3 update` or the first `pm3`
+/// command of the day can change. A record that keeps the argument as typed
+/// would then stop resolving after the next daemon restart.
+///
+/// Returns the script to record and the cwd to run it in. A `cwd` that was
+/// given is resolved like the script, even when the script does not name a
+/// file. An argument that names no file is left exactly as it was, so `pm3
+/// start <name>` can still revive a managed process and a bare command still
+/// reaches `PATH` (through the daemon's `which`).
+pub fn resolve_start_path(
+  script : String,
+  cwd : String?,
+  base : String,
+) -> (String, String?) {
+  // A relative `--cwd` is the CLI's to resolve, the way PM2 resolves it.
+  let given = match cwd {
+    Some(dir) => Some(resolve_config_path(base, dir))
+    None => None
+  }
+  let joined = resolve_config_path(base, script)
+  if joined.length() > 0 && @fs.path_exists(joined) {
+    match given {
+      Some(_) => (joined, given)
+      None => (joined, Some(base))
+    }
+  } else {
+    (script, given)
+  }
+}
+
+///|
 /// Remove a trailing `suffix` from `name`, if present.
 pub fn strip_suffix_owned(name : String, suffix : String) -> String {
   match name.view().strip_suffix(suffix) {

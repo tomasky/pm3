@@ -2,9 +2,6 @@
 /// The pm3 command-line interface.
 
 ///|
-let cli_version : String = "0.1.2"
-
-///|
 /// `exit(3)`, so a command that failed can return a non-zero status the way
 /// PM2 does.
 extern "C" fn pm3_exit(status : Int) -> Unit = "pm3_exit"
@@ -54,31 +51,52 @@ fn render_table(headers : Array[String], rows : Array[Array[String]]) -> String 
 }
 
 ///|
-/// Fetch the process list from the daemon.
-async fn fetch_apps() -> Array[@pm3.App] {
+/// Decode the app records a daemon response carries. A payload this build
+/// cannot read means the daemon is not this build (or is broken), which must
+/// be reported: an empty list is a legitimate answer, an unreadable one is
+/// not.
+async fn decode_apps(response : @pm3.Response) -> Array[@pm3.App]? {
+  match @pm3.app_records_from_json(response.data) {
+    Some(apps) => Some(apps)
+    None => {
+      print_error(
+        "pm3: could not read the process list from the daemon; run `pm3 update` to restart it",
+      )
+      None
+    }
+  }
+}
+
+///|
+/// Fetch the process list from the daemon. The error is already reported when
+/// this returns `None`.
+async fn fetch_apps() -> Array[@pm3.App]? {
   let response = call(@pm3.Request::new("list"))
   if !response.ok {
-    return []
+    print_error("pm3: \{response.msg}")
+    return None
   }
-  @json.from_json(response.data) catch {
-    _ => []
-  }
+  decode_apps(response)
 }
 
 ///|
 /// `pm3 list`
 async fn cmd_list(args : Array[String]) -> Unit {
-  let json = args.contains("--json")
-  let response = call(@pm3.Request::new("list"))
-  if !response.ok {
-    print_error("pm3: \{response.msg}")
-    return
-  }
-  if json {
+  if args.contains("--json") {
+    // The raw payload is passed through, so it works even against a daemon
+    // whose records this build cannot fully read.
+    let response = call(@pm3.Request::new("list"))
+    if !response.ok {
+      print_error("pm3: \{response.msg}")
+      return
+    }
     print_line(response.data.stringify())
     return
   }
-  let apps : Array[@pm3.App] = @json.from_json(response.data) catch { _ => [] }
+  let apps = match fetch_apps() {
+    Some(apps) => apps
+    None => return
+  }
   if apps.length() == 0 {
     print_line("no processes managed by pm3")
     return
@@ -144,7 +162,10 @@ async fn cmd_describe(args : Array[String]) -> Unit {
     print_error("pm3: \{response.msg}")
     return
   }
-  let apps : Array[@pm3.App] = @json.from_json(response.data) catch { _ => [] }
+  let apps = match decode_apps(response) {
+    Some(apps) => apps
+    None => return
+  }
   for app in apps {
     let now = @async.now()
     let lines : Array[(String, String)] = [
@@ -374,6 +395,30 @@ async fn cmd_start_config(path : String) -> Unit {
 }
 
 ///|
+/// Resolve a `pm3 start <script>` request against the directory the command
+/// was run in, so the record the daemon saves does not depend on where the
+/// daemon happens to live (see `resolve_start_path`).
+fn resolve_start_request(request : @pm3.Request) -> Unit {
+  if request.args.length() == 0 {
+    return
+  }
+  let base = match @env.current_dir() {
+    Some(dir) => dir
+    None => return
+  }
+  let (script, cwd) = @pm3.resolve_start_path(
+    request.args[0],
+    request.opts.get("cwd"),
+    base,
+  )
+  request.args[0] = script
+  match cwd {
+    Some(dir) => request.opts.set("cwd", dir)
+    None => ()
+  }
+}
+
+///|
 /// `pm3 start ...`
 async fn cmd_start(args : Array[String]) -> Unit {
   match start_config_path(args) {
@@ -391,6 +436,7 @@ async fn cmd_start(args : Array[String]) -> Unit {
       return
     }
   }
+  resolve_start_request(request)
   let response = call(request)
   if response.ok {
     print_line(response.msg)
@@ -751,7 +797,10 @@ async fn cmd_logs(args : Array[String]) -> Unit {
     }
     i = i + 1
   }
-  let apps = fetch_apps()
+  let apps = match fetch_apps() {
+    Some(apps) => apps
+    None => return
+  }
   let is_all = name.length() == 0
   let selected : Array[@pm3.App] = []
   for app in apps {
@@ -981,9 +1030,40 @@ async fn cmd_kill() -> Unit {
 }
 
 ///|
+/// `pm3 update` — restart the daemon so it runs this build, the way
+/// `pm2 update` does: save the list, kill the daemon, launch it again and
+/// bring the saved processes back online.
+async fn cmd_update() -> Unit {
+  print_line(
+    "Be sure to have the latest version by doing `npm install @tomasko/pm3@latest -g` before doing this procedure.",
+  )
+  let saved = call(@pm3.Request::new("save"))
+  if !saved.ok {
+    print_error("pm3: \{saved.msg}")
+    return
+  }
+  print_line(saved.msg)
+  let killed = call(@pm3.Request::new("kill"))
+  if !killed.ok {
+    print_error("pm3: \{killed.msg}")
+    return
+  }
+  wait_for_daemon_exit()
+  start_daemon()
+  let restored = call(@pm3.Request::new("resurrect"))
+  if !restored.ok {
+    print_error("pm3: \{restored.msg}")
+    return
+  }
+  print_line(restored.msg)
+  print_line(@pm3.blue_bold(">>>>>>>>>> pm3 updated"))
+  cmd_list([])
+}
+
+///|
 /// `pm3 version`
 async fn cmd_version() -> Unit {
-  print_line("pm3 \{cli_version}")
+  print_line("pm3 \{@pm3.pm3_version}")
 }
 
 ///|
@@ -1015,6 +1095,7 @@ async fn print_help() -> Unit {
     ("config [init|apps] [...]", "show or create the global config file"),
     ("save", "save the process list"),
     ("resurrect", "bring saved processes back up"),
+    ("update", "restart the daemon with this pm3 build"),
     ("kill", "kill the pm3 daemon"),
     ("version", "print the pm3 version"),
     ("help", "show this help"),
@@ -1173,6 +1254,7 @@ pub async fn main_cli() -> Unit {
     "reloadLogs" | "reload-logs" => cmd_simple("reloadLogs")
     "save" => cmd_simple("save")
     "resurrect" => cmd_simple("resurrect")
+    "update" => cmd_update()
     "logrotate" | "log-rotate" => cmd_logrotate(rest)
     "set" => cmd_set(rest)
     "config" => cmd_config(rest)
