@@ -80,6 +80,17 @@ async fn fetch_apps() -> Array[@pm3.App]? {
 }
 
 ///|
+/// PM2 caps the name column at 40 characters of width — 38 of content — and
+/// cuts a longer name with a single-character ellipsis (`fitColumn` in
+/// `pm2-ls.js`).
+fn fit_name_pm2(name : String) -> String {
+  if name.length() <= 38 {
+    return name
+  }
+  name.view(start_offset=0, end_offset=37).to_owned() + "…"
+}
+
+///|
 /// `pm3 list`
 async fn cmd_list(args : Array[String]) -> Unit {
   if args.contains("--json") {
@@ -102,42 +113,53 @@ async fn cmd_list(args : Array[String]) -> Unit {
     return
   }
   let now = @async.now()
+  // PM2's columns, in PM2's order. `mode`, `user` and `watching` are fixed
+  // for now: pm3 only forks, and tracks neither watch mode nor a per-app uid.
   let headers = [
-    "id", "name", "status", "cpu", "mem", "restarts", "uptime", "command",
+    "id", "name", "namespace", "version", "mode", "pid", "uptime", "↺", "status",
+    "cpu", "mem", "user", "watching",
   ]
   let rows : Array[Array[String]] = []
   // Totals are accumulated over the running processes only: a stopped one
-  // keeps the last sample it was measured with, and adding that to the total
-  // would report memory that is no longer held.
+  // holds no memory, and adding the last sample it was measured with would
+  // report memory that is no longer there.
   let mut total_cpu = 0.0
   let mut total_mem = 0L
   let mut online = 0
   for app in apps {
-    let running = app.is_online()
-    let uptime = if running {
-      @pm3.format_duration(now - app.started_at)
-    } else {
-      "-"
-    }
     let status = if app.status == @pm3.status_errored {
       "errored(\{app.exit_code})"
     } else {
       app.status
     }
-    if running {
+    // Like PM2, the uptime cell is a duration only while the process is
+    // online; anything else shows `0`.
+    let uptime = if app.status == @pm3.status_online && app.started_at > 0L {
+      @pm3.format_uptime_pm2(now - app.started_at)
+    } else {
+      "0"
+    }
+    if app.is_online() {
       online = online + 1
       total_cpu = total_cpu + app.cpu
       total_mem = total_mem + app.memory
     }
     rows.push([
       @pm3.bold_cyan(app.pm_id.to_string()),
-      @pm3.truncate_text(app.name, 24),
+      fit_name_pm2(app.name),
+      app.app_namespace,
+      if app.version.length() > 0 { app.version } else { "N/A" },
+      @pm3.bold_inverse("fork"),
+      app.pid.to_string(),
+      uptime,
+      app.restarts.to_string(),
       style_status(status),
       @pm3.format_cpu_percent(app.cpu),
       @pm3.format_size_pm2(app.memory),
-      app.restarts.to_string(),
-      uptime,
-      @pm3.truncate_text(app.command_display(), 40),
+      @pm3.style_bold(
+        if app.username.length() > 0 { app.username } else { "N/A" },
+      ),
+      @pm3.style_gray("disabled"),
     ])
   }
   print_line(render_table(headers, rows))
@@ -266,10 +288,10 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
       continue
     }
     let needs_value = [
-      "--name", "-n", "--interpreter", "-i", "--interpreter-args", "--node-args",
-      "--cwd", "--out-file", "--err-file", "--log-date-format", "--max-restarts",
-      "--restart-delay", "--min-uptime", "--max-memory-restart", "--kill-timeout",
-      "--kill-signal", "--stop-exit-codes", "--env", "-e",
+      "--name", "-n", "--namespace", "--interpreter", "-i", "--interpreter-args",
+      "--node-args", "--cwd", "--out-file", "--err-file", "--log-date-format",
+      "--max-restarts", "--restart-delay", "--min-uptime", "--max-memory-restart",
+      "--kill-timeout", "--kill-signal", "--stop-exit-codes", "--env", "-e",
     ]
     if needs_value.contains(arg) {
       if i + 1 >= args.length() {
@@ -278,6 +300,7 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
       let value = args[i + 1]
       match arg {
         "--name" | "-n" => request.opts.set("name", value)
+        "--namespace" => request.opts.set("namespace", value)
         "--interpreter" | "-i" => request.opts.set("interpreter", value)
         "--interpreter-args" | "--node-args" =>
           request.opts.set("interpreter_args", value)
@@ -389,6 +412,9 @@ async fn cmd_start_config(path : String) -> Unit {
   let response = call(request)
   if response.ok {
     print_line(response.msg)
+    // `pm2 start <config>` shows the list once every app came up; a config
+    // with a failing app reports that and nothing else.
+    cmd_list([])
   } else {
     print_error("pm3: \{response.msg}")
   }
@@ -440,6 +466,8 @@ async fn cmd_start(args : Array[String]) -> Unit {
   let response = call(request)
   if response.ok {
     print_line(response.msg)
+    // PM2 prints the list of everything it manages once an app is up.
+    cmd_list([])
   } else {
     print_error("pm3: \{response.msg}")
   }
@@ -457,6 +485,9 @@ async fn cmd_lifecycle(command : String, args : Array[String]) -> Unit {
   let response = call(request)
   if response.ok {
     print_line(response.msg)
+    // PM2 ends these with the process list, so the state the action left
+    // behind is right there.
+    cmd_list([])
   } else {
     print_error("pm3: \{response.msg}")
   }
@@ -1023,6 +1054,18 @@ async fn cmd_config_apps(args : Array[String]) -> Unit {
 }
 
 ///|
+/// `pm3 resurrect` — PM2 ends the restore with the list of what came back.
+async fn cmd_resurrect() -> Unit {
+  let response = call(@pm3.Request::new("resurrect"))
+  if response.ok {
+    print_line(response.msg)
+    cmd_list([])
+  } else {
+    print_error("pm3: \{response.msg}")
+  }
+}
+
+///|
 /// `pm3 kill` — stop the daemon (leaves child processes stopped).
 async fn cmd_kill() -> Unit {
   let response = call(@pm3.Request::new("kill"))
@@ -1082,9 +1125,12 @@ async fn print_help() -> Unit {
     ("start [options] [name|file|config]", "start and daemonize an app"),
     ("list | ls [--json]", "list managed processes"),
     ("describe <name|id>", "describe all parameters of a process"),
-    ("stop [name|id|all]", "stop one or all processes"),
-    ("restart [name|id|all]", "restart one or all processes"),
-    ("delete [name|id|all]", "stop and delete one or all processes"),
+    ("desc <name|id>", "(alias) describe all parameters of a process"),
+    ("info <name|id>", "(alias) describe all parameters of a process"),
+    ("show <name|id>", "(alias) describe all parameters of a process"),
+    ("stop [name|id|namespace|all]", "stop one or all processes"),
+    ("restart [name|id|namespace|all]", "restart one or all processes"),
+    ("delete [name|id|namespace|all]", "stop and delete one or all processes"),
     (
       "logs [name|id] [options]", "tail and stream logs (--follow, --lines N, --out, --err, --raw)",
     ),
@@ -1151,6 +1197,7 @@ async fn print_start_help() -> Unit {
   let options : Array[(String, String)] = [
     ("--config <file>", "read the apps from a pm3.toml / pm3.json"),
     ("-n, --name <name>", "process name (default: script basename)"),
+    ("--namespace <ns>", "start the app within the given namespace"),
     ("-i, --interpreter <cmd>", "run <script> through <cmd>"),
     (
       "--interpreter-args <arguments>", "arguments passed to the interpreter before the script",
@@ -1233,7 +1280,7 @@ pub async fn main_cli() -> Unit {
         cmd_start(rest)
       }
     "list" | "ls" | "ps" | "status" => cmd_list(rest)
-    "describe" | "desc" | "show" => cmd_describe(rest)
+    "describe" | "desc" | "info" | "show" => cmd_describe(rest)
     "stop" => cmd_lifecycle("stop", rest)
     "restart" => cmd_lifecycle("restart", rest)
     "delete" | "del" | "remove" => cmd_lifecycle("delete", rest)
@@ -1253,7 +1300,7 @@ pub async fn main_cli() -> Unit {
     }
     "reloadLogs" | "reload-logs" => cmd_simple("reloadLogs")
     "save" => cmd_simple("save")
-    "resurrect" => cmd_simple("resurrect")
+    "resurrect" => cmd_resurrect()
     "update" => cmd_update()
     "logrotate" | "log-rotate" => cmd_logrotate(rest)
     "set" => cmd_set(rest)

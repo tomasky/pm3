@@ -53,6 +53,18 @@ async fn supervise(
     }
     let (read_out, write_out) = @process.read_from_process()
     let (read_err, write_err) = @process.read_from_process()
+    // PM2 recomputes `version` from the app's package.json on every launch,
+    // so a redeploy that bumps the version is reflected on the next restart.
+    let base = if app.cwd.length() > 0 {
+      app.cwd
+    } else {
+      match @env.current_dir() {
+        Some(dir) => dir
+        None => ""
+      }
+    }
+    app.version = @pm3.find_package_version(app.script, base)
+    app.username = @pm3.current_username()
     let (cmd, argv) = app.command_line()
     let cwd : StringView? = if app.cwd.length() > 0 {
       Some(app.cwd)
@@ -73,10 +85,9 @@ async fn supervise(
       _ => {
         read_out.close()
         read_err.close()
-        app.status = @pm3.status_errored
-        app.exit_code = -1
-        app.stopped_at = @async.now()
-        app.pid = 0
+        // A launch that never got a process: the record is dead from birth,
+        // the way an app that execs-and-fails lands in PM2.
+        app.mark_exited(-1)
         break
       }
     }

@@ -145,3 +145,25 @@ test "version skew warning follows PM2's shape" {
   assert_true(coloured.contains("\u{1b}[1m\u{1b}[34m0.1.2\u{1b}[39m\u{1b}[22m"))
   @pm3.set_colors_enabled(before)
 }
+
+///|
+/// PM2 caps the name column at 38 characters of content and cuts a longer
+/// name with a single-character ellipsis (`fitColumn` in pm2-ls.js).
+test "fit_name_pm2 cuts long names like PM2's fitColumn" {
+  assert_eq(fit_name_pm2("worker"), "worker")
+  let buf = StringBuilder()
+  for _ in 0..<38 {
+    buf.write_char('a')
+  }
+  let width_38 = buf.to_string()
+  assert_eq(fit_name_pm2(width_38), width_38)
+  let buf39 = StringBuilder()
+  for _ in 0..<39 {
+    buf39.write_char('a')
+  }
+  let buf37 = StringBuilder()
+  for _ in 0..<37 {
+    buf37.write_char('a')
+  }
+  assert_eq(fit_name_pm2(buf39.to_string()), buf37.to_string() + "…")
+}

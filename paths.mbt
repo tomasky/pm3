@@ -82,6 +82,46 @@ pub fn resolve_start_path(
 }
 
 ///|
+/// The `version` of the nearest `package.json` at or above the app's script,
+/// the way PM2 fills `pm2_env.version` (`Utility.findPackageVersion`, which
+/// walks outwards with `find-package-json`). `base` resolves a relative
+/// script. The first `package.json` that exists and parses decides the
+/// answer: its `version`, or `N/A` when it has none. A file that exists but
+/// does not parse is skipped, and running out of directories is also `N/A`.
+pub fn find_package_version(script : String, base : String) -> String {
+  let full = if script.has_prefix("/") {
+    script
+  } else if base.length() > 0 {
+    path_join(base, script)
+  } else {
+    return "N/A"
+  }
+  let mut dir = path_dirname(full)
+  while dir.length() > 1 && dir.has_prefix("/") {
+    let file = path_join(dir, "package.json")
+    if @fs.path_exists(file) {
+      let parsed : Json? = Some(@json.parse(@fs.read_file_to_string(file))) catch {
+        _ => None
+      }
+      match parsed {
+        Some(json) =>
+          match json {
+            Json::Object(members) =>
+              match members.get("version") {
+                Some(Json::String(version)) => return version
+                _ => return "N/A"
+              }
+            _ => return "N/A"
+          }
+        None => ()
+      }
+    }
+    dir = path_dirname(dir)
+  }
+  "N/A"
+}
+
+///|
 /// Remove a trailing `suffix` from `name`, if present.
 pub fn strip_suffix_owned(name : String, suffix : String) -> String {
   match name.view().strip_suffix(suffix) {

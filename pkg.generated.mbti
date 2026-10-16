@@ -71,6 +71,8 @@ pub fn config_format_of(String) -> ConfigFormat?
 
 pub fn cron_matches(CronSpec, Int64) -> Bool
 
+pub fn current_username() -> String
+
 pub fn days_from_civil(Int, Int, Int) -> Int
 
 pub fn decode_request(String) -> Request?
@@ -93,6 +95,8 @@ pub fn find_app_config() -> String?
 
 pub fn find_config_source() -> ConfigSource?
 
+pub fn find_package_version(String, String) -> String
+
 pub fn format_cpu_percent(Double) -> String
 
 pub fn format_duration(Int64) -> String
@@ -106,6 +110,8 @@ pub fn format_size_exact(Int64) -> String
 pub fn format_size_pm2(Int64, precision? : Int) -> String
 
 pub fn format_timestamp(Int64, Int, String) -> String
+
+pub fn format_uptime_pm2(Int64) -> String
 
 pub fn green_bold(String) -> String
 
@@ -259,6 +265,7 @@ pub fn yellow_bold(String) -> String
 pub(all) struct App {
   mut pm_id : Int
   mut name : String
+  mut app_namespace : String
   mut script : String
   mut args : Array[String]
   mut interpreter : String
@@ -278,6 +285,8 @@ pub(all) struct App {
   mut kill_signal : String
   mut stop_exit_codes : Array[Int]
   mut status : String
+  mut version : String
+  mut username : String
   mut desired_state : String
   mut pid : Int
   mut restarts : Int

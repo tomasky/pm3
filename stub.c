@@ -14,3 +14,8 @@ MOONBIT_FFI_EXPORT
 int32_t pm3_isatty(int32_t fd) {
   return (int32_t)isatty((int)fd);
 }
+
+MOONBIT_FFI_EXPORT
+int32_t pm3_uid(void) {
+  return (int32_t)getuid();
+}

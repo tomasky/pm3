@@ -26,6 +26,11 @@ pub(all) struct App {
   // --- identity ---
   mut pm_id : Int
   mut name : String
+  /// The namespace the app belongs to — PM2's `pm2_env.namespace`. `default`
+  /// unless `--namespace` (or the config file) says otherwise. The field is
+  /// named `app_namespace` because `namespace` is a reserved word in MoonBit;
+  /// the option and the config key keep PM2's spelling.
+  mut app_namespace : String
   // --- launch ---
   mut script : String
   mut args : Array[String]
@@ -62,6 +67,11 @@ pub(all) struct App {
   mut stop_exit_codes : Array[Int]
   // --- runtime state ---
   mut status : String
+  /// The app's own version — the `version` of the nearest `package.json` at
+  /// or above its script, PM2's `pm2_env.version`. `N/A` when there is none.
+  mut version : String
+  /// Login name of the user that started the app, PM2's `pm2_env.username`.
+  mut username : String
   /// What the user asked for: `online` or `stopped`.
   mut desired_state : String
   mut pid : Int
@@ -85,12 +95,58 @@ pub fn default_log_path(name : String, stream : String) -> String {
 }
 
 ///|
+/// The login name of the user running pm3 — PM2's `pm2_env.username`, taken
+/// from `Common.getCurrentUsername`: the passwd entry of the effective user
+/// comes first, the usual environment variables are the fallback.
+pub fn current_username() -> String {
+  match passwd_username() {
+    Some(name) => return name
+    None => ()
+  }
+  for key in ["USER", "LNAME", "USERNAME", "SUDO_USER", "C9_USER", "LOGNAME"] {
+    match @env.get_env_var(key) {
+      Some(value) if value.length() > 0 => return value
+      _ => ()
+    }
+  }
+  ""
+}
+
+///|
+/// `getuid(2)` from the C library.
+extern "C" fn pm3_uid() -> Int = "pm3_uid"
+
+///|
+/// Resolve `/etc/passwd` for the uid this process runs as.
+fn passwd_username() -> String? {
+  let uid = pm3_uid()
+  if uid < 0 {
+    return None
+  }
+  let text = @fs.read_file_to_string("/etc/passwd") catch { _ => return None }
+  for line in text.split("\n") {
+    let fields : Array[StringView] = []
+    for field in line.split(":") {
+      fields.push(field)
+    }
+    if fields.length() >= 3 {
+      match parse_non_negative_int(fields[2]) {
+        Some(id) if id == uid => return Some(fields[0].to_owned())
+        _ => ()
+      }
+    }
+  }
+  None
+}
+
+///|
 /// Build a new application with conservative defaults.
 pub fn App::new(name : String, script : String, args : Array[String]) -> App {
   let now = @env.now().reinterpret_as_int64()
   {
     pm_id: -1,
     name,
+    app_namespace: "default",
     script,
     args,
     interpreter: "",
@@ -110,6 +166,8 @@ pub fn App::new(name : String, script : String, args : Array[String]) -> App {
     kill_signal: "SIGTERM",
     stop_exit_codes: [],
     status: status_stopped,
+    version: "N/A",
+    username: current_username(),
     desired_state: status_stopped,
     pid: 0,
     restarts: 0,
@@ -177,9 +235,13 @@ pub fn App::mark_started(self : App, pid : Int) -> Unit {
 }
 
 ///|
-/// Record that the process exited with `code`.
+/// Record that the process exited with `code`. The resource samples are
+/// dropped with it: PM2's monitor reports `0` for anything that is not
+/// running, and the last sample of a dead process is not memory it holds.
 pub fn App::mark_exited(self : App, code : Int) -> Unit {
   self.pid = 0
+  self.memory = 0L
+  self.cpu = 0.0
   self.exit_code = code
   self.stopped_at = @env.now().reinterpret_as_int64()
   if self.wants_stop() {

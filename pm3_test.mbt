@@ -187,6 +187,25 @@ test "format_duration" {
 }
 
 ///|
+test "format_uptime_pm2" {
+  // Below a minute: plain seconds.
+  assert_eq(@pm3.format_uptime_pm2(0L), "0s")
+  assert_eq(@pm3.format_uptime_pm2(59_000L), "59s")
+  // The largest unit is only used once it would be used more than once,
+  // which is what PM2's `timeSince` does: 60s..119m stay in the unit below.
+  assert_eq(@pm3.format_uptime_pm2(60_000L), "60s")
+  assert_eq(@pm3.format_uptime_pm2(119_000L), "119s")
+  assert_eq(@pm3.format_uptime_pm2(120_000L), "2m")
+  assert_eq(@pm3.format_uptime_pm2(3_599_000L), "59m")
+  assert_eq(@pm3.format_uptime_pm2(3_600_000L), "60m")
+  assert_eq(@pm3.format_uptime_pm2(7_199_000L), "119m")
+  assert_eq(@pm3.format_uptime_pm2(7_200_000L), "2h")
+  assert_eq(@pm3.format_uptime_pm2(172_800_000L), "2D")
+  assert_eq(@pm3.format_uptime_pm2(5_184_000_000L), "2M")
+  assert_eq(@pm3.format_uptime_pm2(63_072_000_000L), "2Y")
+}
+
+///|
 test "parse_bool_value and parse_non_negative_int" {
   assert_eq(@pm3.parse_bool_value("TRUE"), Some(true))
   assert_eq(@pm3.parse_bool_value("0"), Some(false))
@@ -494,4 +513,75 @@ test "render_box colors borders, header and keys the way PM2 does" {
     @pm3.render_box(Some(["id"]), [["0"]]),
   )
   @pm3.set_colors_enabled(before)
+}
+
+///|
+/// The version column follows PM2: the `version` of the nearest package.json
+/// at or above the script, and `N/A` when there is none.
+test "find_package_version walks up to package.json" {
+  let base = "/tmp/pm3-find-version"
+  @fs.create_dir(base) catch { _ => () }
+  @fs.create_dir(base + "/with") catch { _ => () }
+  @fs.create_dir(base + "/with/sub") catch { _ => () }
+  @fs.write_string_to_file(
+    base + "/with/package.json",
+    "{\"version\": \"1.2.3\"}",
+  ) catch {
+    _ => ()
+  }
+  assert_eq(@pm3.find_package_version(base + "/with/app.js", ""), "1.2.3")
+  assert_eq(@pm3.find_package_version(base + "/with/sub/app.js", ""), "1.2.3")
+  // A relative script is resolved against the app's cwd.
+  assert_eq(@pm3.find_package_version("app.js", base + "/with"), "1.2.3")
+  // A package.json without a version stops the walk with `N/A`, the way
+  // PM2's finder does.
+  @fs.create_dir(base + "/nover") catch { _ => () }
+  @fs.write_string_to_file(base + "/nover/package.json", "{\"name\": \"x\"}") catch {
+    _ => ()
+  }
+  assert_eq(@pm3.find_package_version(base + "/nover/app.js", ""), "N/A")
+  // An unparsable package.json is skipped, so a valid one further up wins.
+  @fs.create_dir(base + "/broken") catch { _ => () }
+  @fs.create_dir(base + "/broken/inner") catch { _ => () }
+  @fs.write_string_to_file(
+    base + "/broken/package.json",
+    "{\"version\": \"9.9.9\"}",
+  ) catch {
+    _ => ()
+  }
+  @fs.write_string_to_file(base + "/broken/inner/package.json", "{not json") catch {
+    _ => ()
+  }
+  assert_eq(@pm3.find_package_version(base + "/broken/inner/app.js", ""), "9.9.9")
+  // Nothing above the script at all.
+  @fs.create_dir(base + "/none") catch { _ => () }
+  assert_eq(@pm3.find_package_version(base + "/none/app.js", ""), "N/A")
+}
+
+///|
+/// A fresh record carries the namespace, version and user columns of the
+/// table.
+test "a new app starts in the default namespace" {
+  let app = @pm3.App::new("worker", "/srv/worker.js", [])
+  assert_eq(app.app_namespace, "default")
+  assert_eq(app.version, "N/A")
+  assert_true(app.username.length() > 0)
+}
+
+///|
+/// A process that stopped does not report the memory it held while running:
+/// PM2's monitor answers `0` for anything that is not up.
+test "mark_exited clears the resource samples" {
+  let app = @pm3.App::new("worker", "/srv/worker.js", [])
+  app.desired_state = @pm3.status_online
+  app.status = @pm3.status_online
+  app.pid = 4242
+  app.memory = 10L * 1024L * 1024L
+  app.cpu = 12.5
+  app.mark_exited(3)
+  assert_eq(app.pid, 0)
+  assert_eq(app.memory, 0L)
+  assert_eq(app.cpu, 0.0)
+  assert_eq(app.exit_code, 3)
+  assert_eq(app.status, "errored")
 }

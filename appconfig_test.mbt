@@ -379,3 +379,23 @@ test "app config: interpreter args are validated" {
     "'exec_interpreter' must be a string",
   )
 }
+
+///|
+/// `namespace` is PM2's key for grouping processes; it defaults to `default`
+/// and can also come from the `[defaults]` table.
+test "app config: namespace is read, PM2 style" {
+  let apps = config_apps(
+    "[[app]]\nname = \"worker\"\nscript = \"./worker.py\"\nnamespace = \"prod\"\n",
+    "/srv/app",
+  )
+  assert_eq(apps[0].app_namespace, "prod")
+  let plain = config_apps(
+    "[[app]]\nname = \"worker\"\nscript = \"./worker.py\"\n", "/srv/app",
+  )
+  assert_eq(plain[0].app_namespace, "default")
+  let inherited = config_apps(
+    "[defaults]\nnamespace = \"batch\"\n\n[[app]]\nname = \"worker\"\nscript = \"./worker.py\"\n",
+    "/srv/app",
+  )
+  assert_eq(inherited[0].app_namespace, "batch")
+}

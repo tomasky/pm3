@@ -63,6 +63,7 @@ fn opt_size(value : String, fallback : Int64) -> Int64 {
 fn apply_start_opts(app : @pm3.App, opts : Map[String, String]) -> Unit {
   for key, value in opts {
     match key {
+      "namespace" => app.app_namespace = value
       "interpreter" => app.interpreter = value
       "interpreter_args" => app.interpreter_args = @pm3.split_shell_words(value)
       "cwd" => app.cwd = value
@@ -160,6 +161,21 @@ async fn handle_start(
     return @pm3.Response::failure("start: missing script")
   }
   let script = request.args[0]
+  // `pm3 start all` puts every managed process back up, the way
+  // `pm2 start all` does.
+  if script == "all" && request.opts.get("name") is None {
+    let apps = state.ordered()
+    if apps.length() == 0 {
+      return @pm3.Response::failure("no process found")
+    }
+    for managed in apps {
+      managed.app.restarts = 0
+      managed.app.unstable_restarts = 0
+      restart_managed(group, state, managed)
+    }
+    state.save()
+    return @pm3.Response::success("started \{apps.length()} process(es)")
+  }
   // `pm3 start <name>` on a name pm3 already manages brings the saved
   // specification back, the way `pm2 start <name>` does: the argument is an
   // app, not a file. A path — or a name that is not in the process list —
@@ -213,6 +229,7 @@ async fn handle_start(
 /// runtime fields (notably `pm_id`) that identify it.
 fn copy_launch_spec(dst : @pm3.App, src : @pm3.App) -> Unit {
   dst.name = src.name
+  dst.app_namespace = src.app_namespace
   dst.script = src.script
   dst.args = src.args
   dst.interpreter = src.interpreter
@@ -314,9 +331,72 @@ fn select_apps(state : DaemonState, request : @pm3.Request) -> Array[Managed] {
     return state.ordered()
   }
   let name = request.args[0]
+  // A number is a pm_id, the way `pm2 describe <id>` reads it.
+  match @pm3.parse_non_negative_int(name) {
+    Some(id) =>
+      match state.get(id) {
+        Some(managed) => return [managed]
+        None => ()
+      }
+    None => ()
+  }
   match state.find_by_name(name) {
     Some(managed) => [managed]
     None => []
+  }
+}
+
+///|
+/// Resolve the target of a lifecycle command (`stop`, `restart`, `delete`):
+/// a name or a pm_id picks that process, `all` picks every process, a name
+/// that is no process picks every process of that namespace —
+/// `pm2 stop|restart|delete <namespace>` — and no name picks everything.
+fn select_lifecycle_apps(
+  state : DaemonState,
+  request : @pm3.Request,
+) -> Array[Managed] {
+  if request.args.length() == 0 {
+    return state.ordered()
+  }
+  let name = request.args[0]
+  // `all` is a keyword, the way it is in `pm2 stop|restart|delete all`: it
+  // takes every process, even one that happens to be called `all`.
+  if name == "all" {
+    return state.ordered()
+  }
+  // A number is a pm_id, the way `pm2 stop|restart|delete <id>` reads it.
+  match @pm3.parse_non_negative_int(name) {
+    Some(id) =>
+      match state.get(id) {
+        Some(managed) => return [managed]
+        None => ()
+      }
+    None => ()
+  }
+  match state.find_by_name(name) {
+    Some(managed) => [managed]
+    None => {
+      let out : Array[Managed] = []
+      for managed in state.ordered() {
+        if managed.app.app_namespace == name {
+          out.push(managed)
+        }
+      }
+      out
+    }
+  }
+}
+
+///|
+/// What a lifecycle command says when it selected nothing. `all` — or no
+/// target at all — always names something, so an empty result means the
+/// table itself is empty (PM2's "no process found"); a named target that
+/// does not exist gets the usual "no such process".
+fn lifecycle_miss(request : @pm3.Request) -> String {
+  if request.args.length() == 0 || request.args[0] == "all" {
+    "no process found"
+  } else {
+    "no such process"
   }
 }
 
@@ -352,9 +432,9 @@ async fn dispatch(
     "start" => handle_start(group, state, request)
     "start_apps" => handle_start_apps(group, state, request)
     "stop" => {
-      let apps = select_apps(state, request)
+      let apps = select_lifecycle_apps(state, request)
       if apps.length() == 0 {
-        @pm3.Response::failure("no such process")
+        @pm3.Response::failure(lifecycle_miss(request))
       } else {
         for managed in apps {
           stop_managed(state, managed)
@@ -364,9 +444,9 @@ async fn dispatch(
       }
     }
     "restart" => {
-      let apps = select_apps(state, request)
+      let apps = select_lifecycle_apps(state, request)
       if apps.length() == 0 {
-        @pm3.Response::failure("no such process")
+        @pm3.Response::failure(lifecycle_miss(request))
       } else {
         for managed in apps {
           // A manual restart resets the restart budget, like PM2.
@@ -379,9 +459,9 @@ async fn dispatch(
       }
     }
     "delete" => {
-      let apps = select_apps(state, request)
+      let apps = select_lifecycle_apps(state, request)
       if apps.length() == 0 {
-        @pm3.Response::failure("no such process")
+        @pm3.Response::failure(lifecycle_miss(request))
       } else {
         for managed in apps {
           delete_managed(state, managed)

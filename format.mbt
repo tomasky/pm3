@@ -98,6 +98,36 @@ pub fn format_duration(millis : Int64) -> String {
 }
 
 ///|
+/// Render the uptime column the way PM2's `UxHelpers.timeSince` does: whole
+/// seconds below a minute, then the largest unit that is used *more than
+/// once* — 119s stays `119s`, 120s becomes `2m`, 3600s is `60m`, 7200s is
+/// `2h` — with `s`, `m`, `h`, `D`, `M` and `Y` as the units.
+pub fn format_uptime_pm2(millis : Int64) -> String {
+  let seconds = if millis < 0L { 0L } else { millis / 1000L }
+  let years = seconds / 31536000L
+  if years > 1L {
+    return "\{years}Y"
+  }
+  let months = seconds / 2592000L
+  if months > 1L {
+    return "\{months}M"
+  }
+  let days = seconds / 86400L
+  if days > 1L {
+    return "\{days}D"
+  }
+  let hours = seconds / 3600L
+  if hours > 1L {
+    return "\{hours}h"
+  }
+  let minutes = seconds / 60L
+  if minutes > 1L {
+    return "\{minutes}m"
+  }
+  "\{seconds}s"
+}
+
+///|
 /// Render a table the way PM2 renders its tables through `cli-tableau`: a
 /// box-drawing border around every cell, with exactly one space of padding on
 /// each side of the content.

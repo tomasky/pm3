@@ -150,15 +150,16 @@ pm3 start ./server --name api -- --port 8080
 # Environment variables.
 pm3 start ./server --name api -e PORT=8080 -e LOG_LEVEL=info
 
-# Inspect it. Tables are drawn the way PM2 draws them; the footer totals the
-# running processes.
+# Inspect it. The columns are PM2's — id, name, namespace, version, mode, pid,
+# uptime, restarts (↺), status, cpu, mem, user, watching — and the footer
+# totals the running processes.
 pm3 list
-# ┌────┬────────┬────────┬───────┬───────┬──────────┬────────┬────────────────────────────────────┐
-# │ id │ name   │ status │ cpu   │ mem   │ restarts │ uptime │ command                            │
-# ├────┼────────┼────────┼───────┼───────┼──────────┼────────┼────────────────────────────────────┤
-# │ 0  │ digest │ online │ 86.9% │ 11.3mb │ 0        │ 6s     │ python3 ./digest.py                │
-# │ 1  │ worker │ online │ 0%    │ 2.0mb  │ 0        │ 6s     │ sh -c while true; do sleep 1; done │
-# └────┴────────┴────────┴───────┴────────┴──────────┴────────┴────────────────────────────────────┘
+# ┌────┬────────┬───────────┬─────────┬──────┬──────┬────────┬───┬────────┬───────┬────────┬──────┬──────────┐
+# │ id │ name   │ namespace │ version │ mode │ pid  │ uptime │ ↺ │ status │ cpu   │ mem    │ user │ watching │
+# ├────┼────────┼───────────┼─────────┼──────┼──────┼────────┼───┼────────┼───────┼────────┼──────┼──────────┤
+# │ 0  │ digest │ default   │ N/A     │ fork │ 4242 │ 6s     │ 0 │ online │ 86.9% │ 11.3mb │ root │ disabled │
+# │ 1  │ worker │ default   │ 2.5.1   │ fork │ 4243 │ 6s     │ 0 │ online │ 0%    │ 2.0mb  │ root │ disabled │
+# └────┴────────┴───────────┴─────────┴──────┴──────┴────────┴───┴────────┴───────┴────────┴──────┴──────────┘
 #
 # 2/2 online   total cpu 86.9%   total mem 13.3mb
 
@@ -254,6 +255,7 @@ Every `start` option has a config key of the same name:
 | --- | --- |
 | `name` | string (default: the script's basename without its extension) |
 | `script` | string, required |
+| `namespace` | string (default `default`); `pm3 stop\|restart\|delete <namespace>` acts on all of its apps |
 | `args` | array of strings |
 | `interpreter` | string (`exec_interpreter` is accepted as PM2's alias) |
 | `interpreter_args` | string (split on whitespace) or array; PM2's `node_args` and `interpreterArgs` are accepted too |
@@ -340,8 +342,7 @@ interpreter_args = ["--trace-warnings", "--max-old-space-size=512"]
 The string form is split on whitespace, with single and double quotes grouping
 a run of spaces into one argument; the array form is taken as is. The arguments
 are placed before the script — `node --trace-warnings app.js` — so they reach
-`process.execArgv`. `pm3 describe` prints them, and `pm3 list` shows them in
-the command column.
+`process.execArgv`. `pm3 describe` shows them in the command it prints.
 
 Python interpreters additionally get `PYTHONUNBUFFERED=1`, so their output
 appears in the logs as it is written instead of at exit, and a machine whose
@@ -351,7 +352,8 @@ accepted as an alias of `interpreter`.
 `pm3 start <name>` for a process that is already known brings it back up from
 its **saved launch specification**, the way `pm2 start <name>` does: the
 interpreter and arguments it was created with are reused, rather than `name`
-being taken as a script path.
+being taken as a script path. `pm3 start all` does the same for every process
+in the list, the way `pm2 start all` does.
 
 ## Commands
 
@@ -359,11 +361,11 @@ being taken as a script path.
 | --- | --- |
 | `pm3 start <script> [options] [-- args...]` | Start and supervise a process |
 | `pm3 start [--config <file>]` | Start every app a config file declares |
-| `pm3 list` (aliases `ls`, `ps`, `status`) | Table of managed processes, with running/total counts and total CPU and memory |
-| `pm3 describe <name>` | Full configuration and runtime state |
-| `pm3 stop [name]` | Stop one process, or all when no name is given |
-| `pm3 restart [name]` | Restart one process, or all (resets the restart counter) |
-| `pm3 delete [name]` (alias `del`) | Stop and remove processes |
+| `pm3 list` (aliases `ls`, `ps`, `status`) | Table of managed processes with PM2's columns, plus running/total counts and total CPU and memory |
+| `pm3 describe <name\|id>` (aliases `desc`, `info`, `show`) | Full configuration and runtime state |
+| `pm3 stop [name\|id\|namespace\|all]` | Stop one process, a whole namespace, or all when `all` (or no name) is given |
+| `pm3 restart [name\|id\|namespace\|all]` | Restart one process, a whole namespace, or all (resets the restart counter) |
+| `pm3 delete [name\|id\|namespace\|all]` (alias `del`) | Stop and remove processes; a namespace name removes all of its apps |
 | `pm3 logs [name] [--lines N] [--follow] [--out] [--err] [--raw] [--nostream]` | Show (and follow) logs |
 | `pm3 flush [name]` | Truncate the live log(s) |
 | `pm3 reloadLogs` | Rotate every managed log now |
@@ -384,6 +386,7 @@ being taken as a script path.
 | --- | --- |
 | `--config <file>` | Read the app list from a `pm3.toml` / `pm3.json` instead |
 | `-n`, `--name <name>` | Process name (default: script basename) |
+| `--namespace <ns>` | Start the app within the given namespace (default `default`) |
 | `-i`, `--interpreter <cmd>` | Run `<script>` as an argument to `<cmd>` |
 | `--interpreter-args <arguments>` | Arguments for the interpreter, before the script (`--node-args` is PM2's alias) |
 | `--cwd <dir>` | Working directory |

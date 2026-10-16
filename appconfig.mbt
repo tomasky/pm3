@@ -42,10 +42,11 @@
 /// as-is.
 pub fn app_field_names() -> Array[String] {
   [
-    "name", "script", "args", "interpreter", "exec_interpreter", "interpreter_args",
-    "interpreterArgs", "node_args", "cwd", "env", "autorestart", "max_restarts",
-    "restart_delay", "min_uptime", "max_memory_restart", "kill_timeout", "kill_signal",
-    "stop_exit_codes", "merge_logs", "out_log", "err_log", "log_date_format",
+    "name", "script", "args", "namespace", "interpreter", "exec_interpreter",
+    "interpreter_args", "interpreterArgs", "node_args", "cwd", "env", "autorestart",
+    "max_restarts", "restart_delay", "min_uptime", "max_memory_restart", "kill_timeout",
+    "kill_signal", "stop_exit_codes", "merge_logs", "out_log", "err_log",
+    "log_date_format",
   ]
 }
 
@@ -169,6 +170,7 @@ fn read_interpreter_args_field(
 /// reset to their fresh values, which is what a config file describes.
 fn clone_app(app : App) -> App {
   let copy = App::new(app.name, app.script, app.args.copy())
+  copy.app_namespace = app.app_namespace
   copy.interpreter = app.interpreter
   copy.interpreter_args = app.interpreter_args.copy()
   copy.cwd = app.cwd
@@ -252,6 +254,9 @@ fn app_from_table(
     script_set = true
   })
   apply_field(read_string_array_field(members, "args"), v => app.args = v)
+  apply_field(read_text_field(members, "namespace"), v => {
+    app.app_namespace = v
+  })
   apply_field(
     read_aliased_text_field(members, ["interpreter", "exec_interpreter"]),
     v => app.interpreter = v,
@@ -357,6 +362,9 @@ fn read_app_defaults(members : Map[String, Json]) -> App raise ConfigError {
     }
   }
   apply_field(read_string_array_field(table, "args"), v => app.args = v)
+  apply_field(read_text_field(table, "namespace"), v => {
+    app.app_namespace = v
+  })
   apply_field(
     read_aliased_text_field(table, ["interpreter", "exec_interpreter"]),
     v => app.interpreter = v,

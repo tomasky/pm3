@@ -33,6 +33,9 @@ test "app_records_from_json backfills fields an older daemon did not write" {
   assert_eq(app.status, "errored")
   assert_eq(app.exit_code, -1)
   assert_eq(app.interpreter_args, [])
+  // Fields that grew later than v0.1.2 are backfilled with their defaults.
+  assert_eq(app.app_namespace, "default")
+  assert_eq(app.version, "N/A")
 }
 
 ///|
