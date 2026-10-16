@@ -1288,7 +1288,7 @@ async fn print_start_help() -> Unit {
     ("--min-uptime <ms>", "below this a restart counts as unstable"),
     ("--max-memory-restart <size>", "restart when RSS exceeds <size>"),
     ("--kill-timeout <ms>", "grace period before SIGKILL"),
-    ("--kill-signal <signal>", "graceful signal (default: SIGTERM)"),
+    ("--kill-signal <signal>", "graceful signal (default: SIGINT)"),
     ("--stop-exit-codes <a,b>", "exit codes that should not restart"),
     ("-e, --env KEY=VALUE", "set an environment variable (repeatable)"),
   ]

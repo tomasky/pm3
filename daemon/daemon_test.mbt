@@ -30,6 +30,15 @@ test "signal_number maps names" {
 }
 
 ///|
+test "signal_name maps numbers back" {
+  assert_eq(@daemon.signal_name(2), "SIGINT")
+  assert_eq(@daemon.signal_name(15), "SIGTERM")
+  assert_eq(@daemon.signal_name(9), "SIGKILL")
+  assert_eq(@daemon.signal_name(11), "SIGSEGV")
+  assert_eq(@daemon.signal_name(34), "SIG34")
+}
+
+///|
 /// Tests for interpreter resolution: the decisions `pm3 start` makes about
 /// whether a script runs directly, under node, or under the interpreter its
 /// extension names.

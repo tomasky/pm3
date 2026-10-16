@@ -97,6 +97,23 @@ async fn interruptible_sleep(app : @pm3.App, total_ms : Int) -> Unit {
 }
 
 ///|
+/// PM2's exit line for `App::exit_code` observation:
+/// `App [name:id] exited with code [c] via signal [s]`.
+///
+/// `code` is what the supervisor's `wait()` returned; negative means the
+/// process died to a signal, and PM2 prints `0` for those because the JS
+/// exit code is `null`. Natural exits print their code and PM2's
+/// `kill_signal || 'SIGINT'` fallback.
+fn app_exit_line(app : @pm3.App, code : Int) -> String {
+  let (shown_code, signal) = if code < 0 {
+    (0, signal_name(-code))
+  } else {
+    (code, "SIGINT")
+  }
+  "App [\{app.name}:\{app.pm_id}] exited with code [\{shown_code}] via signal [\{signal}]"
+}
+
+///|
 /// The spawn/wait/restart loop for one app. Returns when the app is stopped,
 /// deleted, or has exhausted its restart budget.
 async fn supervise(
@@ -139,6 +156,7 @@ async fn supervise(
     } else {
       None
     }
+    daemon_log("App [\{app.name}:\{app.pm_id}] starting in -fork mode-")
     let proc = @process.spawn(
       group,
       cmd,
@@ -161,6 +179,7 @@ async fn supervise(
     }
     app.mark_started(proc.pid)
     managed.proc = Some(proc)
+    daemon_log("App [\{app.name}:\{app.pm_id}] online")
     // Reset the CPU sample baseline: a new pid has a fresh tick counter.
     managed.last_cpu_ticks = 0L
     managed.last_cpu_at = 0L
@@ -169,6 +188,7 @@ async fn supervise(
     let code = proc.wait()
     app.mark_exited(code)
     managed.proc = None
+    daemon_log(app_exit_line(app, code))
     if app.should_restart(code) {
       app.record_restart()
       state.save()
@@ -202,10 +222,14 @@ pub fn start_managed(
 }
 
 ///|
-/// Stop `managed` gracefully (SIGTERM, then SIGKILL after `kill_timeout`) and
-/// wait for the supervisor to observe the exit.
+/// Stop `managed` gracefully (`kill_signal`, then SIGKILL after
+/// `kill_timeout`) and wait for the supervisor to observe the exit.
 pub async fn stop_managed(state : DaemonState, managed : Managed) -> Unit {
   let app = managed.app
+  let was_online = app.is_online()
+  if was_online {
+    daemon_log("Stopping app:\{app.name} id:\{app.pm_id}")
+  }
   app.desired_state = @pm3.status_stopped
   if app.status == @pm3.status_online || app.status == @pm3.status_launching {
     app.status = @pm3.status_stopping
@@ -226,6 +250,9 @@ pub async fn stop_managed(state : DaemonState, managed : Managed) -> Unit {
           match finished {
             Some(_) => ()
             None => {
+              daemon_log(
+                "Process with pid \{pid} still alive after \{app.kill_timeout}ms, sending SIGKILL to 1 remaining pids...",
+              )
               send_signal(pid, sig_kill)
               ignore(@async.with_timeout_opt(2000, () => task.wait())) catch {
                 _ => ()
@@ -233,6 +260,9 @@ pub async fn stop_managed(state : DaemonState, managed : Managed) -> Unit {
             }
           }
         }
+      }
+      if was_online {
+        daemon_log("pid=\{pid} msg=process tree killed (1 pids)")
       }
     }
   }

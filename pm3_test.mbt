@@ -48,6 +48,17 @@ test "format_timestamp" {
   assert_eq(@pm3.weekday_from_days(18628), 5)
   // Offset is applied before formatting.
   assert_eq(@pm3.format_timestamp(1609459200L, 3600, "HH"), "01")
+  // Named days and months plus the GMT offset, the shape the daemon's
+  // startup banner uses; `[GMT]` is dayjs's literal escape.
+  assert_eq(
+    @pm3.format_timestamp(1609459200L, 0, "ddd MMM DD YYYY HH:mm:ss [GMT]ZZ"),
+    "Fri Jan 01 2021 00:00:00 GMT+0000",
+  )
+  assert_eq(
+    @pm3.format_timestamp(1609459200L, -18000, "ddd MMM DD HH:mm ZZ"),
+    "Thu Dec 31 19:00 -0500",
+  )
+  assert_eq(@pm3.format_timestamp(1609459200L, 19800, "Z"), "+05:30")
 }
 
 ///|

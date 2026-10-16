@@ -403,7 +403,7 @@ in the list, the way `pm2 start all` does.
 | `--min-uptime <ms>` | Runs shorter than this count as "unstable" |
 | `--max-memory-restart <size>` | Restart when RSS exceeds `<size>` |
 | `--kill-timeout <ms>` | Grace period before `SIGKILL` |
-| `--kill-signal <signal>` | Graceful signal (default `SIGTERM`) |
+| `--kill-signal <signal>` | Graceful signal (default `SIGINT`) |
 | `--stop-exit-codes <a,b>` | Exit codes that should not trigger a restart |
 | `--time` | Prefix every log line with PM2's default `YYYY-MM-DDTHH:mm:ss` timestamp |
 | `--log-date-format <fmt>` | Custom `moment`-style timestamp prefix for log lines (wins over `--time`) |
@@ -479,6 +479,18 @@ and `--help` / `--version` — exit `0`.
 ```
 
 Set `PM3_HOME` to relocate everything (useful for tests).
+
+`pm3.log` carries the same shape as PM2's daemon log: every line is prefixed
+with a local timestamp and a `PM3 log:` tag, and the lifecycle is logged with
+PM2's wording — `App [web:0] starting in -fork mode-`, `App [web:0] online`,
+`Stopping app:web id:0`, `App [web:0] exited with code [0] via signal
+[SIGINT]`, `pid=1234 msg=process tree killed (1 pids)`, `PM3 successfully
+stopped`. `PM3_LOG_DATE_FORMAT` (or `PM2_LOG_DATE_FORMAT`) replaces the
+timestamp format; an empty value disables the prefix.
+
+The daemon renames its command line the way PM2's God daemon does, so `ps`
+shows `PM3 v0.1.6: God Daemon (/home/me/.pm3)` instead of the binary path;
+`PM3_DAEMON_TITLE` (or PM2's variable of the same name) overrides the title.
 
 ## Log rotation
 
@@ -604,8 +616,8 @@ When both day-of-month and day-of-week are restricted, the schedule fires if
 
 ## Process lifecycle
 
-- **Stop** sends `kill_signal` (default `SIGTERM`), waits up to `kill_timeout`
-  milliseconds, then sends `SIGKILL`.
+- **Stop** sends `kill_signal` (default `SIGINT`, PM2's `KILL_SIGNAL`), waits
+  up to `kill_timeout` milliseconds, then sends `SIGKILL`.
 - **Autorestart** restarts the process whenever it exits, unless
   `--no-autorestart` was given, the exit code is listed in
   `--stop-exit-codes`, or the restart budget (`--max-restarts`) is exhausted.
@@ -634,6 +646,11 @@ When both day-of-month and day-of-week are restricted, the schedule fires if
 | Variable | Meaning |
 | --- | --- |
 | `PM3_HOME` | State directory (default `$HOME/.pm3`) |
+| `PM3_LOG_DATE_FORMAT` | Date format for `pm3.log` line prefixes (default `YYYY-MM-DDTHH:mm:ss`; empty disables the prefix) |
+| `PM2_LOG_DATE_FORMAT` | Fallback for `PM3_LOG_DATE_FORMAT`, so a PM2 environment keeps its format |
+| `PM2_KILL_SIGNAL` | Default graceful-stop signal (default `SIGINT`), PM2's variable |
+| `PM3_DAEMON_TITLE` | `ps` title for the daemon (default `PM3 v<version>: God Daemon (<PM3_HOME>)`) |
+| `PM2_DAEMON_TITLE` | Fallback for `PM3_DAEMON_TITLE`, PM2's variable |
 
 The launcher and installer add their own variables (`PM3_BINARY`,
 `PM3_CACHE_DIR`, `PM3_VERSION`, `PM3_DOWNLOAD_BASE`, `PM3_REPO`, …); they are

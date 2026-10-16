@@ -316,7 +316,7 @@ fn app_from_table(
     app.cwd = base_dir
   }
   if app.kill_signal.is_empty() {
-    app.kill_signal = "SIGTERM"
+    app.kill_signal = default_kill_signal()
   }
   if app.max_restarts < 0 {
     raise ConfigError("'max_restarts' must not be negative")
@@ -392,7 +392,7 @@ fn read_app_defaults(members : Map[String, Json]) -> App raise ConfigError {
     app.log_date_format = v
   })
   if app.kill_signal.is_empty() {
-    app.kill_signal = "SIGTERM"
+    app.kill_signal = default_kill_signal()
   }
   app
 }

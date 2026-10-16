@@ -637,12 +637,15 @@ fn normalize_loaded_state(state : DaemonState) -> Unit {
 /// Entry point of the detached daemon.
 pub async fn run_daemon() -> Unit {
   ignore(pm3_setsid())
+  // `ps` shows the argv memory, so the daemon renames itself to PM2's
+  // `God Daemon` title as its first act; the client that spawned it passes
+  // the same string as an argument to guarantee the block is large enough.
+  pm3_set_process_title(@utf8.encode(@pm3.daemon_process_title()))
   ensure_dirs()
-  @stdio.stderr.write(
-    "pm3 daemon starting (pid \{pm3_getpid()}, home \{@pm3.pm3_state_dir()})\n",
-  ) catch {
-    _ => ()
+  let exe = @fs.realpath("/proc/self/exe") catch {
+    _ => ""
   }
+  daemon_banner(exe)
   let (config, config_source) = @pm3.load_logrotate_config()
   let state = DaemonState::new(config, config_source)
   state.load()
@@ -672,6 +675,7 @@ pub async fn run_daemon() -> Unit {
     @fs.remove(@pm3.pm3_pid_path()) catch {
       _ => ()
     }
+    daemon_log("PM3 successfully stopped")
     group.return_immediately(())
   })
 }

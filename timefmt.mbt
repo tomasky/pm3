@@ -65,17 +65,27 @@ fn render_token(
   hour : Int,
   minute : Int,
   second : Int,
+  weekday : Int,
+  offset_secs : Int,
 ) -> (String, Int)? {
   let rest = fmt.view(start_offset=pos, end_offset=fmt.length())
+  let abs_offset = if offset_secs < 0 { -offset_secs } else { offset_secs }
+  let offset_sign = if offset_secs < 0 { "-" } else { "+" }
+  let offset_hh = pad_left((abs_offset / 3600).to_string(), 2, '0')
+  let offset_mm = pad_left((abs_offset % 3600 / 60).to_string(), 2, '0')
   // Longest tokens first so that YYYY wins over YY, MM over M, ...
   let tokens : Array[(String, String)] = [
     ("YYYY", pad_left(year.to_string(), 4, '0')),
+    ("MMM", month_names[month - 1]),
+    ("ddd", weekday_names[weekday]),
     ("YY", pad_left((year % 100).to_string(), 2, '0')),
     ("MM", pad_left(month.to_string(), 2, '0')),
     ("DD", pad_left(day.to_string(), 2, '0')),
     ("HH", pad_left(hour.to_string(), 2, '0')),
     ("mm", pad_left(minute.to_string(), 2, '0')),
     ("ss", pad_left(second.to_string(), 2, '0')),
+    ("ZZ", offset_sign + offset_hh + offset_mm),
+    ("Z", offset_sign + offset_hh + ":" + offset_mm),
     ("M", month.to_string()),
     ("D", day.to_string()),
     ("H", hour.to_string()),
@@ -92,19 +102,49 @@ fn render_token(
 }
 
 ///|
+/// Short weekday names, indexed by day of week (0 = Sunday).
+let weekday_names : Array[String] = [
+  "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+]
+
+///|
+/// Short month names, indexed by month number minus one.
+let month_names : Array[String] = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+  "Nov", "Dec",
+]
+
+///|
 /// Format a Unix second using a subset of the moment.js-style tokens:
-/// `YYYY`, `YY`, `MM`, `M`, `DD`, `D`, `HH`, `H`, `mm`, `m`, `ss`, `s`.
+/// `YYYY`, `YY`, `MMM`, `MM`, `M`, `DD`, `D`, `ddd`, `HH`, `H`, `mm`, `m`,
+/// `ss`, `s`, `Z` (±HH:mm) and `ZZ` (±HHmm). `[literal]` escapes text, as in
+/// dayjs.
 pub fn format_timestamp(
   epoch_secs : Int64,
   offset_secs : Int,
   fmt : String,
 ) -> String {
   let local_secs = epoch_secs + offset_secs.to_int64()
-  let (year, month, day, hour, minute, second, _) = split_timestamp(local_secs)
+  let (year, month, day, hour, minute, second, days) = split_timestamp(local_secs)
+  let weekday = weekday_from_days(days)
   let out = StringBuilder()
   let mut i = 0
   while i < fmt.length() {
-    match render_token(fmt, i, year, month, day, hour, minute, second) {
+    // `[literal]` escapes text, the way dayjs does, so a format can carry
+    // words like `GMT` without their letters being read as tokens.
+    if fmt.get_char(i) == Some('[') {
+      let mut j = i + 1
+      while j < fmt.length() && fmt.get_char(j) != Some(']') {
+        guard fmt.get_char(j) is Some(c) else { break }
+        out.write_char(c)
+        j = j + 1
+      }
+      i = if j < fmt.length() { j + 1 } else { j }
+      continue
+    }
+    match render_token(
+      fmt, i, year, month, day, hour, minute, second, weekday, offset_secs,
+    ) {
       Some((text, len)) => {
         out.write_string(text)
         i = i + len

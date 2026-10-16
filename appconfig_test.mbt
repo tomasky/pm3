@@ -51,7 +51,7 @@ test "app config: a minimal app gets the defaults" {
   assert_eq(app.max_restarts, 16)
   assert_eq(app.min_uptime, 1000)
   assert_eq(app.kill_timeout, 1600)
-  assert_eq(app.kill_signal, "SIGTERM")
+  assert_eq(app.kill_signal, "SIGINT")
   assert_eq(app.max_memory_restart, 0L)
   assert_eq(app.merge_logs, false)
 }

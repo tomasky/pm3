@@ -63,7 +63,18 @@ pub async fn start_daemon() -> Unit {
   ) catch {
     _ => return
   }
-  ignore(@process.spawn_orphan(exe, ["daemon"], stdout=out, stderr=err)) catch {
+  // The daemon renames itself for `ps` by overwriting its argv block, so the
+  // title rides along as an argument: that reserves room for titles longer
+  // than `<binary> daemon`, the way PM2's `node …/Daemon.js` command line
+  // reserves room for `PM2 v7.0.4: God Daemon (…)`.
+  ignore(
+    @process.spawn_orphan(
+      exe,
+      ["daemon", @pm3.daemon_process_title()],
+      stdout=out,
+      stderr=err,
+    ),
+  ) catch {
     _ => return
   }
   for _ in 0..<100 {

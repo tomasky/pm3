@@ -26,8 +26,21 @@ pub extern "C" fn pm3_local_offset(epoch_secs : Int64) -> Int = "pm3_local_offse
 pub extern "C" fn pm3_pagesize() -> Int = "pm3_pagesize"
 
 ///|
+/// `uname(2)` machine class: 1 x86-64, 2 aarch64, 3 32-bit ARM, 4 ia32,
+/// 5 ppc64, 6 s390x, 7 riscv64, 0 anything else.
+pub extern "C" fn pm3_uname_machine() -> Int = "pm3_uname_machine"
+
+///|
 /// `sysconf(_SC_CLK_TCK)`, used to translate CPU tick counts to seconds.
 pub extern "C" fn pm3_clk_tck() -> Int = "pm3_clk_tck"
+
+///|
+/// Rename the process the way PM2 renames its God daemon: the title replaces
+/// argv in the memory `ps` reads, so the daemon shows up as
+/// `PM3 v0.1.6: God Daemon (/home/me/.pm3)` instead of the binary path.
+/// No-op on platforms without a portable way to rewrite argv.
+#borrow(title)
+pub extern "C" fn pm3_set_process_title(title : Bytes) -> Unit = "pm3_set_process_title"
 
 ///|
 /// Signal numbers, as understood by `kill(2)`.
@@ -51,6 +64,45 @@ pub fn signal_number(name : String) -> Int {
     "SIGINT" | "INT" | "2" => sig_int
     "SIGHUP" | "HUP" | "1" => sig_hup
     _ => sig_term
+  }
+}
+
+///|
+/// Map a signal number back to its name, for the daemon log's exit line.
+pub fn signal_name(sig : Int) -> String {
+  match sig {
+    1 => "SIGHUP"
+    2 => "SIGINT"
+    3 => "SIGQUIT"
+    4 => "SIGILL"
+    5 => "SIGTRAP"
+    6 => "SIGABRT"
+    7 => "SIGBUS"
+    8 => "SIGFPE"
+    9 => "SIGKILL"
+    10 => "SIGUSR1"
+    11 => "SIGSEGV"
+    12 => "SIGUSR2"
+    13 => "SIGPIPE"
+    14 => "SIGALRM"
+    15 => "SIGTERM"
+    16 => "SIGSTKFLT"
+    17 => "SIGCHLD"
+    18 => "SIGCONT"
+    19 => "SIGSTOP"
+    20 => "SIGTSTP"
+    21 => "SIGTTIN"
+    22 => "SIGTTOU"
+    23 => "SIGURG"
+    24 => "SIGXCPU"
+    25 => "SIGXFSZ"
+    26 => "SIGVTALRM"
+    27 => "SIGPROF"
+    28 => "SIGWINCH"
+    29 => "SIGIO"
+    30 => "SIGPWR"
+    31 => "SIGSYS"
+    _ => "SIG\{sig}"
   }
 }
 

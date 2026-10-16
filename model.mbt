@@ -140,6 +140,23 @@ fn passwd_username() -> String? {
 }
 
 ///|
+/// The signal `pm3 stop` sends before `kill_timeout` expires. PM2 v7's
+/// daemon uses its `KILL_SIGNAL` constant — `PM2_KILL_SIGNAL` when set,
+/// `SIGINT` otherwise — so pm3 starts from the same default while still
+/// letting each app override it.
+pub fn default_kill_signal() -> String {
+  match @env.get_env_var("PM2_KILL_SIGNAL") {
+    Some(value) if value.length() > 0 => value
+    _ => "SIGINT"
+  }
+}
+
+///|
+/// The default grace period before escalating to `SIGKILL`, matching PM2's
+/// `KILL_TIMEOUT`.
+pub let default_kill_timeout_ms : Int = 1600
+
+///|
 /// Build a new application with conservative defaults.
 pub fn App::new(name : String, script : String, args : Array[String]) -> App {
   let now = @env.now().reinterpret_as_int64()
@@ -162,8 +179,8 @@ pub fn App::new(name : String, script : String, args : Array[String]) -> App {
     restart_delay: 0,
     min_uptime: 1000,
     max_memory_restart: 0L,
-    kill_timeout: 1600,
-    kill_signal: "SIGTERM",
+    kill_timeout: default_kill_timeout_ms,
+    kill_signal: default_kill_signal(),
     stop_exit_codes: [],
     status: status_stopped,
     version: "N/A",

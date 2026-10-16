@@ -288,6 +288,11 @@ async fn compress_file(path : String) -> Unit {
 }
 
 ///|
+/// How often the resource monitor samples CPU and memory, in milliseconds.
+/// The startup banner reports it as PM2 reports its own worker interval.
+let monitor_interval_ms : Int = 2000
+
+///|
 /// The resource monitor: keeps `memory`/`cpu` fresh and enforces
 /// `max_memory_restart`.
 pub async fn run_monitor_loop(
@@ -296,7 +301,7 @@ pub async fn run_monitor_loop(
 ) -> Unit {
   let clk = pm3_clk_tck().to_int64()
   while state.running {
-    @async.sleep(2000)
+    @async.sleep(monitor_interval_ms)
     if !state.running {
       break
     }

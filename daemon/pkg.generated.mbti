@@ -30,7 +30,11 @@ pub fn pm3_pagesize() -> Int
 
 pub fn pm3_pid_alive(Int) -> Int
 
+pub fn pm3_set_process_title(Bytes) -> Unit
+
 pub fn pm3_setsid() -> Int
+
+pub fn pm3_uname_machine() -> Int
 
 pub async fn read_cpu_ticks(Int) -> Int64
 
@@ -61,6 +65,8 @@ pub let sig_int : Int
 pub let sig_kill : Int
 
 pub let sig_term : Int
+
+pub fn signal_name(Int) -> String
 
 pub fn signal_number(String) -> Int
 
