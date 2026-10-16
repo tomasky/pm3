@@ -2,6 +2,7 @@ import {
   "kupas/pm3",
   "moonbitlang/core/env",
   "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",
   "moonbitlang/async/fs",

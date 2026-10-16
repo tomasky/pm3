@@ -6,13 +6,81 @@
 /// is what lets the daemon rotate logs without touching the child.
 
 ///|
+/// Insert `stamp` before every line of `data`, given whether the first byte
+/// of `data` starts a line. Returns the line-start state for the next chunk
+/// — true when `data` ends with a newline — and the stamped bytes.
+///
+/// This is the pump's approximation of PM2's ProcessContainer, which stamps
+/// each `write()` call; the pump only sees pipe chunks, so it stamps each
+/// line, which is the same thing for one-line-per-write logging.
+fn stamp_lines(
+  at_line_start : Bool,
+  data : Bytes,
+  stamp : Bytes,
+) -> (Bool, Bytes) {
+  let n = data.length()
+  if n == 0 {
+    return (at_line_start, data)
+  }
+  let ends_with_newline = data.unsafe_get(n - 1) == b'\n'
+  let stamp_len = stamp.length()
+  if stamp_len == 0 {
+    return (ends_with_newline, data)
+  }
+  // One stamp per line start: position 0 when the previous chunk ended on a
+  // newline, plus one after every newline that is followed by more bytes.
+  let mut count = if at_line_start { 1 } else { 0 }
+  for i in 1..<n {
+    if data.unsafe_get(i - 1) == b'\n' {
+      count = count + 1
+    }
+  }
+  let out = FixedArray::make(n + count * stamp_len, b'\x00')
+  let mut j = 0
+  for i in 0..<n {
+    if (i == 0 && at_line_start) || (i > 0 && data.unsafe_get(i - 1) == b'\n') {
+      for k in 0..<stamp_len {
+        out[j + k] = stamp.unsafe_get(k)
+      }
+      j = j + stamp_len
+    }
+    out[j] = data.unsafe_get(i)
+    j = j + 1
+  }
+  (ends_with_newline, out.unsafe_reinterpret_as_bytes())
+}
+
+///|
 /// Copy a child pipe into a log sink until EOF.
-async fn pump(reader : @process.ReadFromProcess, sink : LogSink) -> Unit {
+///
+/// When `log_date_format` is set — PM2's `--time` / `--log-date-format` —
+/// every line is written with the formatted wall-clock time in front of it
+/// (`2026-10-16T06:07:52: message`), the way PM2's ProcessContainer does.
+async fn pump(
+  reader : @process.ReadFromProcess,
+  sink : LogSink,
+  log_date_format : String,
+) -> Unit {
   defer reader.close()
+  let stamping = log_date_format.length() > 0
+  let mut at_line_start = true
   while true {
     match reader.read_some(max_len=65536) {
       None => break
-      Some(bytes) => sink.write(bytes)
+      Some(bytes) => {
+        if !stamping {
+          sink.write(bytes)
+          continue
+        }
+        let now = @async.now() / 1000L
+        let stamp = @utf8.encode(
+          @pm3.format_timestamp(now, pm3_local_offset(now), log_date_format) +
+          ": ",
+        )
+        let (next_start, stamped) = stamp_lines(at_line_start, bytes, stamp)
+        at_line_start = next_start
+        sink.write(stamped)
+      }
     }
   }
 }
@@ -96,8 +164,8 @@ async fn supervise(
     // Reset the CPU sample baseline: a new pid has a fresh tick counter.
     managed.last_cpu_ticks = 0L
     managed.last_cpu_at = 0L
-    group.spawn_bg(() => pump(read_out, out_sink))
-    group.spawn_bg(() => pump(read_err, err_sink))
+    group.spawn_bg(() => pump(read_out, out_sink, app.log_date_format))
+    group.spawn_bg(() => pump(read_err, err_sink, app.log_date_format))
     let code = proc.wait()
     app.mark_exited(code)
     managed.proc = None

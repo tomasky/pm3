@@ -45,7 +45,7 @@ test "toml config: [logrotate] section" {
           assert_eq(config.tz, "UTC+8")
           assert_eq(config.max_age_days, 3)
           // Untouched keys keep their defaults.
-          assert_eq(config.compression_level, 6)
+          assert_eq(config.compression_level, 9)
         }
         Err(msg) => fail("expected a config, got: " + msg)
       }

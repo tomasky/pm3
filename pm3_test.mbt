@@ -158,6 +158,17 @@ test "logrotate set_field validates" {
   assert_true(config.set_field("compression_level", "12") is Err(_))
   assert_true(config.set_field("rotate_interval", "nope") is Err(_))
   assert_true(config.set_field("nope", "1") is Err(_))
+  // pm2-logrotate's camelCase spellings are accepted as aliases.
+  assert_true(config.set_field("dateFormat", "YYYY-MM") is Ok(_))
+  assert_eq(config.date_format, "YYYY-MM")
+  assert_true(config.set_field("workerInterval", "45") is Ok(_))
+  assert_eq(config.worker_interval, 45)
+  assert_true(config.set_field("rotateInterval", "0 4 * * *") is Ok(_))
+  assert_eq(config.rotate_interval, "0 4 * * *")
+  assert_true(config.set_field("rotateModule", "false") is Ok(_))
+  assert_false(config.rotate_module)
+  assert_true(config.set_field("TZ", "UTC+8") is Ok(_))
+  assert_eq(config.tz, "UTC+8")
 }
 
 ///|
@@ -460,6 +471,34 @@ test "styles emit PM2's escape sequences" {
   assert_eq(@pm3.bold_cyan("id"), "id")
   assert_eq(@pm3.style_gray("│"), "│")
   assert_eq(@pm3.bold_gray("[TAILING]"), "[TAILING]")
+  @pm3.set_colors_enabled(before)
+}
+
+///|
+test "colorized_metric follows PM2's thresholds" {
+  let before = @pm3.colors_enabled()
+  @pm3.set_colors_enabled(true)
+  // `value == 0` is PM2's plain branch, whatever the colour state.
+  assert_eq(@pm3.colorized_metric(0.0, 40.0, 70.0, "0%"), "0%")
+  // Green below warn.
+  assert_eq(
+    @pm3.colorized_metric(12.5, 40.0, 70.0, "12.5%"),
+    "\u{1b}[32m12.5%\u{1b}[39m",
+  )
+  // Bold yellow from warn through alert, bold red above.
+  assert_eq(
+    @pm3.colorized_metric(40.0, 40.0, 70.0, "40%"),
+    "\u{1b}[1m\u{1b}[33m40%\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.colorized_metric(70.0, 40.0, 70.0, "70%"),
+    "\u{1b}[1m\u{1b}[33m70%\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.colorized_metric(90.0, 40.0, 70.0, "90%"),
+    "\u{1b}[1m\u{1b}[31m90%\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(@pm3.colorized_metric(0.0 / 0.0, 40.0, 70.0, "x"), "N/A")
   @pm3.set_colors_enabled(before)
 }
 

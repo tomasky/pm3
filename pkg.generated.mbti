@@ -65,6 +65,8 @@ pub let cmd_stop : String
 
 pub let cmd_version : String
 
+pub fn colorized_metric(Double, Double, Double, String) -> String
+
 pub fn colors_enabled() -> Bool
 
 pub fn config_format_of(String) -> ConfigFormat?

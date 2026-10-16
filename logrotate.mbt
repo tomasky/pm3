@@ -28,7 +28,8 @@ pub struct LogrotateConfig {
   mut retain : Int
   /// Gzip rotated files in the background.
   mut compress : Bool
-  /// gzip level, 1 (fast) to 9 (small).
+  /// Gzip level, 1 (fast) to 9 (small). Defaults to 9, the fixed
+  /// `Z_BEST_COMPRESSION` level `pm2-logrotate` uses.
   mut compression_level : Int
   /// `moment`-style token string used in rotated file names.
   mut date_format : String
@@ -53,7 +54,7 @@ pub fn default_logrotate_config() -> LogrotateConfig {
     max_size: 10L * 1024L * 1024L,
     retain: 30,
     compress: false,
-    compression_level: 6,
+    compression_level: 9,
     date_format: "YYYY-MM-DD_HH-mm-ss",
     worker_interval: 30,
     rotate_interval: "0 0 * * *",
@@ -171,6 +172,10 @@ fn compare_int64(a : Int64, b : Int64) -> Int {
 ///|
 /// Update one field of the policy from a string, as used by
 /// `pm3 set logrotate:<key> <value>`.
+///
+/// Keys use pm3's snake_case spelling; the camelCase names `pm2-logrotate`
+/// documents (`dateFormat`, `workerInterval`, `rotateInterval`,
+/// `rotateModule`, `TZ`) are accepted as aliases.
 pub fn LogrotateConfig::set_field(
   self : LogrotateConfig,
   key : String,
@@ -225,14 +230,14 @@ pub fn LogrotateConfig::set_field(
         }
         _ => Err("compression_level must be between 1 and 9")
       }
-    "date_format" =>
+    "date_format" | "dateFormat" =>
       if value.length() == 0 {
         Err("date_format must not be empty")
       } else {
         self.date_format = value
         Ok(())
       }
-    "worker_interval" =>
+    "worker_interval" | "workerInterval" =>
       match parse_non_negative_int(value) {
         Some(v) if v >= 1 => {
           self.worker_interval = v
@@ -240,7 +245,7 @@ pub fn LogrotateConfig::set_field(
         }
         _ => Err("worker_interval must be at least 1 second")
       }
-    "rotate_interval" =>
+    "rotate_interval" | "rotateInterval" =>
       match parse_cron(value) {
         Some(_) => {
           self.rotate_interval = value
@@ -248,11 +253,11 @@ pub fn LogrotateConfig::set_field(
         }
         None => Err("rotate_interval must be a valid cron expression")
       }
-    "tz" => {
+    "tz" | "TZ" => {
       self.tz = value
       Ok(())
     }
-    "rotate_module" =>
+    "rotate_module" | "rotateModule" =>
       match parse_bool_value(value) {
         Some(v) => {
           self.rotate_module = v

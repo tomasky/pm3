@@ -163,6 +163,31 @@ pub fn bg_black_bright(text : String) -> String {
 }
 
 ///|
+/// PM2's `UxHelpers.colorizedMetric`: a zero stays plain, anything below
+/// `warn` is green, up to `alert` bold yellow, above it bold red — the way
+/// `pm2 ls` colours the `host metrics` footer.
+pub fn colorized_metric(
+  value : Double,
+  warn : Double,
+  alert : Double,
+  text : String,
+) -> String {
+  if value.is_nan() {
+    return "N/A"
+  }
+  if value == 0.0 {
+    return text
+  }
+  if value < warn {
+    style_green(text)
+  } else if value <= alert {
+    yellow_bold(text)
+  } else {
+    red_bold(text)
+  }
+}
+
+///|
 /// The length of `text` as it appears on a terminal: ANSI escape sequences
 /// contribute nothing.
 pub fn visible_width(text : String) -> Int {

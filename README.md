@@ -11,7 +11,7 @@ daemon, a Node app — not just JavaScript runtimes.
 pm3 start ./worker.sh --name worker
 pm3 start ./worker.py --interpreter python3 --name py-worker --cwd /srv/app
 pm3 list
-pm3 logs worker --follow
+pm3 logs worker
 pm3 stop worker
 ```
 
@@ -177,7 +177,7 @@ pm3 describe api
 # │ cpu                │ 86.9%                             │
 # └────────────────────┴───────────────────────────────────┘
 
-pm3 logs digest --follow
+pm3 logs digest
 
 # Stop it, remove it.
 pm3 stop api
@@ -366,7 +366,7 @@ in the list, the way `pm2 start all` does.
 | `pm3 stop [name\|id\|namespace\|all]` | Stop one process, a whole namespace, or all when `all` (or no name) is given |
 | `pm3 restart [name\|id\|namespace\|all]` | Restart one process, a whole namespace, or all (resets the restart counter) |
 | `pm3 delete [name\|id\|namespace\|all]` (alias `del`) | Stop and remove processes; a namespace name removes all of its apps |
-| `pm3 logs [name] [--lines N] [--follow] [--out] [--err] [--raw] [--nostream]` | Show (and follow) logs |
+| `pm3 logs [name\|id\|namespace] [--lines N] [--nostream] [--timestamp [fmt]] [--out] [--err] [--raw]` | Tail the logs, then stream new lines (PM2's behaviour); `--nostream` keeps the tail alone |
 | `pm3 flush [name]` | Truncate the live log(s) |
 | `pm3 reloadLogs` | Rotate every managed log now |
 | `pm3 logrotate` | Show the rotation policy |
@@ -401,7 +401,8 @@ in the list, the way `pm2 start all` does.
 | `--kill-timeout <ms>` | Grace period before `SIGKILL` |
 | `--kill-signal <signal>` | Graceful signal (default `SIGTERM`) |
 | `--stop-exit-codes <a,b>` | Exit codes that should not trigger a restart |
-| `--log-date-format <fmt>` | Date prefix for log lines (accepted and stored) |
+| `--time` | Prefix every log line with PM2's default `YYYY-MM-DDTHH:mm:ss` timestamp |
+| `--log-date-format <fmt>` | Custom `moment`-style timestamp prefix for log lines (wins over `--time`) |
 | `-e`, `--env KEY=VALUE` | Set an environment variable (repeatable) |
 
 ## Terminal colors
@@ -411,6 +412,12 @@ borders, bold-cyan headers and ids, green `online`, blue `launching`, yellow
 `restarting`, red for anything failed, and the blue `PM3 |` prefix on daemon
 log lines. `pm3 help` is laid out the way commander prints PM2's help, and
 `pm3 logs` prefixes every line with the same `id|name |` column PM2 uses.
+
+The totals under `pm3 list` follow PM2's footer spec: a bold-cyan label, bold
+metric names, and a CPU total that turns green, bold yellow and bold red as it
+crosses PM2's 40%/70% thresholds. `pm3 logs` streams new lines the way
+`pm2 logs` does — `--nostream` keeps the tail alone — and its
+`--timestamp [fmt]` adds PM2's dim-grey current-time prefix to streamed lines.
 
 Colors are emitted only when standard output is a terminal, so piping `pm3
 list` into a file or a log collector gives plain text. `FORCE_COLOR=1` forces
@@ -531,7 +538,7 @@ pm3 set logrotate:rotate_interval "0 3 * * *"
 | `retain` | `30` | Number of rotated files to keep per log |
 | `max_age_days` | `0` | Also delete rotated files older than this (`0` = off) |
 | `compress` | `false` | Gzip rotated files in the background |
-| `compression_level` | `6` | gzip level, 1–9 (validated; encoder level is fixed) |
+| `compression_level` | `9` | gzip level, 1–9 (validated and stored; the built-in encoder writes at a fixed level) |
 | `date_format` | `YYYY-MM-DD_HH-mm-ss` | Timestamp tokens used in rotated names |
 | `worker_interval` | `30` | Seconds between size/prune passes (min 1) |
 | `rotate_interval` | `0 0 * * *` | Cron expression that forces a rotation |
@@ -539,7 +546,9 @@ pm3 set logrotate:rotate_interval "0 3 * * *"
 | `rotate_module` | `true` | Reserved; kept for `pm2-logrotate` compatibility |
 
 The policy is shared by every sink, so changes take effect immediately without
-restarting the daemon.
+restarting the daemon. Every key also accepts `pm2-logrotate`'s camelCase
+spelling — `dateFormat`, `workerInterval`, `rotateInterval`, `rotateModule`
+and `TZ` — so a policy copied over from PM2 keeps working.
 
 ### Configuration file
 
@@ -560,7 +569,6 @@ install keeps working.
 max_size = "100M"
 retain = 14
 compress = true
-compression_level = 6
 rotate_interval = "0 3 * * *"
 tz = "UTC+8"
 ```
@@ -634,11 +642,8 @@ documented in [`npmjs/README.md`](npmjs/README.md).
 - Linux/macOS: process memory and CPU are read from `/proc`, so resource
   reporting is Linux-specific. Supervision itself is POSIX.
 - `kill_signal` accepts `SIGTERM`, `SIGINT`, `SIGHUP` and `SIGKILL`.
-- `compression_level` is validated and stored, but the built-in gzip encoder
-  uses a fixed level. The system `gzip` binary is preferred when available, and
-  that one does honour the level.
-- `--log-date-format` is accepted and stored but line timestamping is not yet
-  applied to log output.
+- `compression_level` is validated and stored but the built-in gzip encoder
+  writes at a fixed level, so the level only documents intent.
 
 ## License
 

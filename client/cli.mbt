@@ -11,6 +11,13 @@ extern "C" fn pm3_exit(status : Int) -> Unit = "pm3_exit"
 let command_failed : Ref[Bool] = Ref(false)
 
 ///|
+/// Serializes writes to the standard streams while `pm3 logs` streams: one
+/// follower task runs per log file, and the async runtime allows only a
+/// single in-flight write per handle — two interleaved writes abort the
+/// process.
+let log_write_lock : @async.Mutex = @async.Mutex()
+
+///|
 async fn print_line(text : String) -> Unit {
   @stdio.stdout.write(text + "\n")
 }
@@ -163,10 +170,20 @@ async fn cmd_list(args : Array[String]) -> Unit {
     ])
   }
   print_line(render_table(headers, rows))
+  // PM2 colours its footer (`host metrics | cpu: … | ram usage: …`) the same
+  // way: a bold-cyan label, bold key names, and values that turn green,
+  // bold-yellow and bold-red as they cross the warn/alert thresholds.
   print_line(
-    "\{online}/\{apps.length()} online   total cpu " +
-    @pm3.format_cpu_percent(total_cpu) +
-    "   total mem " +
+    @pm3.bold_cyan("\{online}/\{apps.length()} online") +
+    "   " +
+    @pm3.style_bold("total cpu") +
+    " " +
+    @pm3.colorized_metric(
+      total_cpu, 40.0, 70.0, @pm3.format_cpu_percent(total_cpu),
+    ) +
+    "   " +
+    @pm3.style_bold("total mem") +
+    " " +
     @pm3.format_size_pm2(total_mem),
   )
 }
@@ -274,6 +291,8 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
   let process_args : Array[String] = []
   let env : Map[String, String] = Map([])
   let mut after_separator = false
+  let mut time_flag = false
+  let mut date_format = ""
   let mut i = 0
   while i < args.length() {
     let arg = args[i]
@@ -307,7 +326,7 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
         "--cwd" => request.opts.set("cwd", value)
         "--out-file" => request.opts.set("out_log", value)
         "--err-file" => request.opts.set("err_log", value)
-        "--log-date-format" => request.opts.set("log_date_format", value)
+        "--log-date-format" => date_format = value
         "--max-restarts" => request.opts.set("max_restarts", value)
         "--restart-delay" => request.opts.set("restart_delay", value)
         "--min-uptime" => request.opts.set("min_uptime", value)
@@ -335,6 +354,11 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
       i = i + 1
       continue
     }
+    if arg == "--time" {
+      time_flag = true
+      i = i + 1
+      continue
+    }
     if arg.has_prefix("-") {
       // Before the script, an unrecognized option is a mistake. After it, it
       // belongs to the program: `pm3 start sh -c '...'` has to work.
@@ -356,6 +380,14 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
     return Err(
       "start: missing script — pass a program to run, or a pm3.toml / pm3.json describing the apps",
     )
+  }
+  // PM2's `--time` writes the default `YYYY-MM-DDTHH:mm:ss` prefix; an
+  // explicit `--log-date-format` wins over it. The daemon then stamps every
+  // line of the app's out/err log with that format.
+  if date_format.length() > 0 {
+    request.opts.set("log_date_format", date_format)
+  } else if time_flag {
+    request.opts.set("log_date_format", "YYYY-MM-DDTHH:mm:ss")
   }
   if env.length() > 0 {
     request.opts.set("env_json", @json.to_json(env).stringify())
@@ -676,7 +708,7 @@ async fn tail_log_file(file : LogFile, lines : Int, raw : Bool) -> Unit {
   let start = if all.length() > lines { all.length() - lines } else { 0 }
   let mut printed = 0
   for i in start..<all.length() {
-    write_log_line(file, all[i], 10, raw)
+    write_log_line(file, all[i], 10, raw, None)
     printed = printed + 1
   }
   if printed > 0 {
@@ -687,12 +719,18 @@ async fn tail_log_file(file : LogFile, lines : Int, raw : Bool) -> Unit {
 ///|
 /// Write one log line: the bytes as they are under `--raw` (stderr goes to
 /// the error stream there, like PM2), or the coloured prefix plus the bytes.
+///
+/// `timestamp` is PM2's `--timestamp [format]`, which only decorates the
+/// *streamed* lines — the tail never carries it — and never `--raw` output.
 async fn write_log_line(
   file : LogFile,
   line : BytesView,
   width : Int,
   raw : Bool,
+  timestamp : String?,
 ) -> Unit {
+  log_write_lock.acquire()
+  defer log_write_lock.release()
   if raw {
     if is_error_log(file.kind) {
       @stdio.stderr.write(line)
@@ -702,6 +740,20 @@ async fn write_log_line(
       @stdio.stdout.write("\n")
     }
   } else {
+    match timestamp {
+      Some(fmt) => {
+        // `process.stdout.write(chalk.dim(chalk.gray(dayjs().format(fmt) + ' ')))`
+        let now = @async.now() / 1000L
+        @stdio.stdout.write(
+          @pm3.style_dim(
+            @pm3.style_gray(
+              @pm3.format_timestamp(now, @daemon.pm3_local_offset(now), fmt) + " ",
+            ),
+          ),
+        )
+      }
+      None => ()
+    }
     @stdio.stdout.write(log_prefix(file.kind, file.label, width))
     @stdio.stdout.write(line)
     @stdio.stdout.write("\n")
@@ -716,6 +768,7 @@ async fn stream_lines(
   bytes : Bytes,
   width : Int,
   raw : Bool,
+  timestamp : String?,
 ) -> Unit {
   let length = bytes.length()
   let mut start = 0
@@ -723,7 +776,7 @@ async fn stream_lines(
   while i < length {
     if bytes.unsafe_get(i) == b'\n' {
       if i > start {
-        write_log_line(file, bytes[start:i], width, raw)
+        write_log_line(file, bytes[start:i], width, raw, timestamp)
       }
       start = i + 1
     }
@@ -747,7 +800,12 @@ fn last_newline(bytes : Bytes) -> Int? {
 /// Follow one log file, printing every line appended after this call under
 /// the same prefix the tail used. Lines are assembled from whole reads, so a
 /// line split across two read chunks is printed once.
-async fn follow_log_file(file : LogFile, width : Int, raw : Bool) -> Unit {
+async fn follow_log_file(
+  file : LogFile,
+  width : Int,
+  raw : Bool,
+  timestamp : String?,
+) -> Unit {
   let mut offset = @fs.file_size(file.path) catch { _ => 0L }
   let mut rest : Bytes = b""
   while true {
@@ -778,7 +836,7 @@ async fn follow_log_file(file : LogFile, width : Int, raw : Bool) -> Unit {
           Some(index) => {
             let complete = chunk[:index + 1].to_owned()
             rest = chunk[index + 1:].to_owned()
-            stream_lines(file, complete, width, raw)
+            stream_lines(file, complete, width, raw, timestamp)
           }
         }
       }
@@ -787,18 +845,21 @@ async fn follow_log_file(file : LogFile, width : Int, raw : Bool) -> Unit {
 }
 
 ///|
-/// `pm3 logs [name|id] [--lines N] [--follow] [--out|--err] [--raw]`
+/// `pm3 logs [name|id|namespace] [--lines N] [--nostream] [--timestamp[=fmt]] [--out|--err] [--raw]`
 ///
 /// The tail is printed the way `pm2 logs` prints it: the daemon's own log
-/// first, then every app log under an aligned, colour-coded `id|name` prefix.
-/// `--follow` then streams new lines like `pm2 logs` does by default.
+/// first, then every app log under an aligned, colour-coded `id|name` prefix;
+/// new lines are then streamed until the terminal is closed, like `pm2 logs`
+/// does by default. `--nostream` keeps just the tail, and `--timestamp`
+/// prefixes each streamed line with the current time in dim grey.
 async fn cmd_logs(args : Array[String]) -> Unit {
   let mut name = ""
-  let mut lines = 20
-  let mut follow = false
+  let mut lines = 15
+  let mut follow = true
   let mut use_err = false
   let mut use_out = false
   let mut raw = false
+  let mut timestamp : String? = None
   let mut i = 0
   while i < args.length() {
     let arg = args[i]
@@ -812,12 +873,24 @@ async fn cmd_logs(args : Array[String]) -> Unit {
           i = i + 1
         }
       "--follow" | "-f" => follow = true
+      "--nostream" => follow = false
       "--err" | "--error" => use_err = true
       "--out" => use_out = true
       "--raw" => raw = true
-      "--nostream" => () // tail without following: the default here
+      "--timestamp" =>
+        // PM2's optional `[format]` argument: the next word is the format
+        // unless it is another option (PM2 consumes a stray process name
+        // here too — pass the name before the flag).
+        if i + 1 < args.length() && !args[i + 1].has_prefix("-") {
+          timestamp = Some(args[i + 1])
+          i = i + 1
+        } else {
+          timestamp = Some("YYYY-MM-DD-HH:mm:ss")
+        }
       _ =>
-        if arg.has_prefix("-") {
+        if arg.has_prefix("--timestamp=") {
+          timestamp = Some(arg.view(start_offset=12).to_owned())
+        } else if arg.has_prefix("-") {
           print_error("pm3: unknown option \{arg}")
           return
         } else if name.length() == 0 {
@@ -839,7 +912,7 @@ async fn cmd_logs(args : Array[String]) -> Unit {
       Some(id) => id == app.pm_id
       None => false
     }
-    if is_all || app.name == name || by_id {
+    if is_all || app.name == name || by_id || app.app_namespace == name {
       selected.push(app)
     }
   }
@@ -871,7 +944,7 @@ async fn cmd_logs(args : Array[String]) -> Unit {
     }
     @async.with_task_group(group => {
       for file in files {
-        group.spawn_bg(() => follow_log_file(file, width, raw))
+        group.spawn_bg(() => follow_log_file(file, width, raw, timestamp))
       }
       while true {
         @async.sleep(1000)
@@ -1132,7 +1205,7 @@ async fn print_help() -> Unit {
     ("restart [name|id|namespace|all]", "restart one or all processes"),
     ("delete [name|id|namespace|all]", "stop and delete one or all processes"),
     (
-      "logs [name|id] [options]", "tail and stream logs (--follow, --lines N, --out, --err, --raw)",
+      "logs [name|id|namespace] [options]", "stream logs file. Default stream all logs",
     ),
     ("flush [name|id]", "empty the logs of one or all processes"),
     ("reloadLogs", "rotate the logs of all processes now"),
@@ -1207,7 +1280,8 @@ async fn print_start_help() -> Unit {
     ("--merge-logs", "merge stderr into stdout's log"),
     ("--out-file <path>", "stdout log path"),
     ("--err-file <path>", "stderr log path"),
-    ("--log-date-format <fmt>", "(reserved) timestamp format"),
+    ("--time", "enable time logging"),
+    ("--log-date-format <date format>", "add custom prefix timestamp to logs"),
     ("--no-autorestart", "do not restart the process when it exits"),
     ("--max-restarts <n>", "restart budget (0 = unlimited)"),
     ("--restart-delay <ms>", "delay before each restart"),
