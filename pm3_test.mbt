@@ -312,3 +312,186 @@ test "format_size_pm2 matches PM2's bytesToSize(bytes, 1)" {
   }
   assert_eq(@pm3.format_size_pm2(1536L, precision=0), "2kb")
 }
+
+///|
+test "split_shell_words splits interpreter arguments like PM2" {
+  assert_eq(@pm3.split_shell_words(""), [])
+  assert_eq(@pm3.split_shell_words("   "), [])
+  assert_eq(
+    @pm3.split_shell_words("--trace-warnings --max-old-space-size=4096"),
+    ["--trace-warnings", "--max-old-space-size=4096"],
+  )
+  // Quotes group a run of spaces into one argument, and are not kept.
+  assert_eq(@pm3.split_shell_words("--require \"lib/setup file.js\" -x"), [
+    "--require", "lib/setup file.js", "-x",
+  ])
+  assert_eq(@pm3.split_shell_words("'one two'"), ["one two"])
+  assert_eq(@pm3.split_shell_words("--title=\"my app\""), ["--title=my app"])
+  // Tabs and newlines separate like spaces.
+  assert_eq(@pm3.split_shell_words("a\tb\nc"), ["a", "b", "c"])
+}
+
+///|
+test "script_extension follows node's path.extname" {
+  assert_eq(@pm3.script_extension("app.js"), ".js")
+  assert_eq(@pm3.script_extension("/srv/app/worker.py"), ".py")
+  assert_eq(@pm3.script_extension("archive.tar.gz"), ".gz")
+  // A leading dot is part of the name, not an extension.
+  assert_eq(@pm3.script_extension(".bashrc"), "")
+  assert_eq(@pm3.script_extension("/srv/.hidden"), "")
+  assert_eq(@pm3.script_extension("Makefile"), "")
+  assert_eq(@pm3.script_extension("dir/"), "")
+  assert_eq(@pm3.script_extension("file."), ".")
+}
+
+///|
+test "interpreter_for_extension is PM2's interpreter.json" {
+  assert_eq(@pm3.interpreter_for_extension(".sh"), Some("bash"))
+  assert_eq(@pm3.interpreter_for_extension(".py"), Some("python"))
+  assert_eq(@pm3.interpreter_for_extension(".rb"), Some("ruby"))
+  assert_eq(@pm3.interpreter_for_extension(".php"), Some("php"))
+  assert_eq(@pm3.interpreter_for_extension(".pl"), Some("perl"))
+  assert_eq(@pm3.interpreter_for_extension(".js"), Some("node"))
+  assert_eq(@pm3.interpreter_for_extension(".coffee"), Some("coffee"))
+  assert_eq(@pm3.interpreter_for_extension(".ls"), Some("lsc"))
+  assert_eq(@pm3.interpreter_for_extension(".ts"), Some("bun"))
+  assert_eq(@pm3.interpreter_for_extension(".tsx"), Some("bun"))
+  assert_eq(@pm3.interpreter_for_extension(".txt"), None)
+  assert_eq(@pm3.interpreter_for_extension(""), None)
+}
+
+///|
+test "is_binary_content follows isbinaryfile's rule" {
+  assert_false(@pm3.is_binary_content(b""))
+  assert_false(@pm3.is_binary_content(b"#!/bin/sh\necho hi\n"))
+  // UTF-8 text, with or without a BOM, is text.
+  assert_false(@pm3.is_binary_content(b"h\xc3\xa9llo w\xc3\xb6rld"))
+  assert_false(@pm3.is_binary_content(b"\xef\xbb\xbfhello"))
+  // A NUL byte is a decision, not a ratio.
+  assert_true(@pm3.is_binary_content(b"abc\x00def"))
+  // An ELF header.
+  assert_true(@pm3.is_binary_content(b"\x7fELF\x02\x01\x01\x00"))
+  // More than 10% of the sample being non-text decides, too.
+  let mostly_text = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\x01"
+  assert_false(@pm3.is_binary_content(mostly_text))
+  let mostly_bytes : Bytes = b"\x01".repeat(40)
+  assert_true(@pm3.is_binary_content(mostly_bytes))
+}
+
+///|
+test "is_python_interpreter sees through paths" {
+  assert_true(@pm3.is_python_interpreter("python"))
+  assert_true(@pm3.is_python_interpreter("python3"))
+  assert_true(@pm3.is_python_interpreter("/usr/bin/python3.11"))
+  assert_false(@pm3.is_python_interpreter("node"))
+  assert_false(@pm3.is_python_interpreter(""))
+}
+
+///|
+test "visible_width does not count ANSI escapes" {
+  assert_eq(@pm3.visible_width("abc"), 3)
+  assert_eq(@pm3.visible_width(""), 0)
+  assert_eq(@pm3.visible_width("\u{1b}[1m\u{1b}[36mabc\u{1b}[39m\u{1b}[22m"), 3)
+  assert_eq(@pm3.visible_width("a\u{1b}[90m│\u{1b}[39mb"), 3)
+}
+
+///|
+test "pad_visible pads on visible width" {
+  assert_eq(@pm3.pad_visible("ab", 4, ' '), "ab  ")
+  assert_eq(@pm3.pad_visible("abcd", 2, ' '), "abcd")
+  let colored = "\u{1b}[32mab\u{1b}[39m"
+  assert_eq(@pm3.pad_visible(colored, 4, ' '), colored + "  ")
+}
+
+///|
+test "styles emit PM2's escape sequences" {
+  let before = @pm3.colors_enabled()
+  @pm3.set_colors_enabled(true)
+  assert_eq(@pm3.bold_cyan("id"), "\u{1b}[1m\u{1b}[36mid\u{1b}[39m\u{1b}[22m")
+  assert_eq(
+    @pm3.green_bold("online"),
+    "\u{1b}[1m\u{1b}[32monline\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.red_bold("errored"),
+    "\u{1b}[1m\u{1b}[31merrored\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.blue_bold("launching"),
+    "\u{1b}[1m\u{1b}[34mlaunching\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.yellow_bold("restarting"),
+    "\u{1b}[1m\u{1b}[33mrestarting\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.bold_gray("[TAILING]"),
+    "\u{1b}[1m\u{1b}[90m[TAILING]\u{1b}[39m\u{1b}[22m",
+  )
+  assert_eq(
+    @pm3.bold_inverse(" Describing process "),
+    "\u{1b}[1m\u{1b}[7m Describing process \u{1b}[27m\u{1b}[22m",
+  )
+  assert_eq(@pm3.style_gray("│"), "\u{1b}[90m│\u{1b}[39m")
+  assert_eq(@pm3.style_green("out"), "\u{1b}[32mout\u{1b}[39m")
+  assert_eq(@pm3.style_red("err"), "\u{1b}[31merr\u{1b}[39m")
+  assert_eq(@pm3.style_blue("PM3"), "\u{1b}[34mPM3\u{1b}[39m")
+  // Turning colours off leaves the text alone.
+  @pm3.set_colors_enabled(false)
+  assert_eq(@pm3.bold_cyan("id"), "id")
+  assert_eq(@pm3.style_gray("│"), "│")
+  assert_eq(@pm3.bold_gray("[TAILING]"), "[TAILING]")
+  @pm3.set_colors_enabled(before)
+}
+
+///|
+test "render_box colors borders, header and keys the way PM2 does" {
+  let before = @pm3.colors_enabled()
+  @pm3.set_colors_enabled(true)
+  let gray = fn(text : String) { "\u{1b}[90m" + text + "\u{1b}[39m" }
+  let head = fn(text : String) {
+    "\u{1b}[1m\u{1b}[36m" + text + "\u{1b}[39m\u{1b}[22m"
+  }
+  assert_eq(
+    @pm3.render_box(Some(["id", "name"]), [["0", "worker"]], style=true),
+    gray("┌────┬────────┐") +
+    "\n" +
+    gray("│") +
+    head(" id ") +
+    gray("│") +
+    head(" name   ") +
+    gray("│") +
+    "\n" +
+    gray("├────┼────────┤") +
+    "\n" +
+    gray("│") +
+    " 0  " +
+    gray("│") +
+    " worker " +
+    gray("│") +
+    "\n" +
+    gray("└────┴────────┘") +
+    "\n",
+  )
+  // The headerless shape colours its key column instead of a header row.
+  assert_eq(
+    @pm3.render_box(None, [["status", "online"]], style=true),
+    gray("┌────────┬────────┐") +
+    "\n" +
+    gray("│") +
+    head(" status ") +
+    gray("│") +
+    " online " +
+    gray("│") +
+    "\n" +
+    gray("└────────┴────────┘") +
+    "\n",
+  )
+  // With colours off, `style` changes nothing.
+  @pm3.set_colors_enabled(false)
+  assert_eq(
+    @pm3.render_box(Some(["id"]), [["0"]], style=true),
+    @pm3.render_box(Some(["id"]), [["0"]]),
+  )
+  @pm3.set_colors_enabled(before)
+}

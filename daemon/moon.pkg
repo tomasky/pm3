@@ -1,5 +1,6 @@
 import {
   "kupas/pm3",
+  "moonbitlang/core/env",
   "moonbitlang/core/json",
   "moonbitlang/async",
   "moonbitlang/async/aqueue",

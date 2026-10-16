@@ -36,9 +36,14 @@
 ///|
 /// Field names an `[[app]]` entry understands. Anything else is rejected, so a
 /// typo is reported rather than silently ignored.
+///
+/// `exec_interpreter`, `interpreterArgs` and `node_args` are accepted because
+/// PM2's ecosystem documents them — a config carried over from PM2 should load
+/// as-is.
 pub fn app_field_names() -> Array[String] {
   [
-    "name", "script", "args", "interpreter", "cwd", "env", "autorestart", "max_restarts",
+    "name", "script", "args", "interpreter", "exec_interpreter", "interpreter_args",
+    "interpreterArgs", "node_args", "cwd", "env", "autorestart", "max_restarts",
     "restart_delay", "min_uptime", "max_memory_restart", "kill_timeout", "kill_signal",
     "stop_exit_codes", "merge_logs", "out_log", "err_log", "log_date_format",
   ]
@@ -121,11 +126,51 @@ fn read_string_map_field(
 }
 
 ///|
+/// Read the first alias that is present, so both PM2's and pm3's spelling of a
+/// field work. Values are checked with `read_text_field`, so a non-string is
+/// still an error.
+fn read_aliased_text_field(
+  members : Map[String, Json],
+  keys : Array[String],
+) -> Result[String?, String] {
+  for key in keys {
+    match read_text_field(members, key) {
+      Ok(None) => ()
+      Ok(Some(value)) => return Ok(Some(value))
+      Err(message) => return Err(message)
+    }
+  }
+  Ok(None)
+}
+
+///|
+/// Read `interpreter_args` under any of the names PM2 accepts — the snake_case
+/// form used by ecosystem files, the camelCase form used by `ecosystem.config.js`
+/// authors, and PM2's own `node_args`.
+///
+/// A single string is split on whitespace the way PM2 splits it, so both
+/// `interpreter_args = "--harmony --max-old-space-size=512"` and
+/// `interpreter_args = ["--harmony"]` work.
+fn read_interpreter_args_field(
+  members : Map[String, Json],
+) -> Result[Array[String]?, String] {
+  for key in ["interpreter_args", "interpreterArgs", "node_args"] {
+    match members.get(key) {
+      None => ()
+      Some(Json::String(text)) => return Ok(Some(split_shell_words(text)))
+      _ => return read_string_array_field(members, key)
+    }
+  }
+  Ok(None)
+}
+
+///|
 /// Copy an application, keeping only the launch specification. Runtime fields
 /// reset to their fresh values, which is what a config file describes.
 fn clone_app(app : App) -> App {
   let copy = App::new(app.name, app.script, app.args.copy())
   copy.interpreter = app.interpreter
+  copy.interpreter_args = app.interpreter_args.copy()
   copy.cwd = app.cwd
   copy.env = Map([])
   for key, value in app.env {
@@ -207,7 +252,13 @@ fn app_from_table(
     script_set = true
   })
   apply_field(read_string_array_field(members, "args"), v => app.args = v)
-  apply_field(read_text_field(members, "interpreter"), v => app.interpreter = v)
+  apply_field(
+    read_aliased_text_field(members, ["interpreter", "exec_interpreter"]),
+    v => app.interpreter = v,
+  )
+  apply_field(read_interpreter_args_field(members), v => {
+    app.interpreter_args = v
+  })
   apply_field(read_text_field(members, "cwd"), v => {
     app.cwd = resolve_config_path(base_dir, v)
     cwd_set = true
@@ -306,7 +357,11 @@ fn read_app_defaults(members : Map[String, Json]) -> App raise ConfigError {
     }
   }
   apply_field(read_string_array_field(table, "args"), v => app.args = v)
-  apply_field(read_text_field(table, "interpreter"), v => app.interpreter = v)
+  apply_field(
+    read_aliased_text_field(table, ["interpreter", "exec_interpreter"]),
+    v => app.interpreter = v,
+  )
+  apply_field(read_interpreter_args_field(table), v => app.interpreter_args = v)
   apply_field(read_string_map_field(table, "env"), v => {
     for key, value in v {
       app.env.set(key, value)

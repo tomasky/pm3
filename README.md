@@ -17,11 +17,16 @@ pm3 stop worker
 
 ## Highlights
 
-- **Any executable.** `pm3` supervises an arbitrary command line; the optional
-  `--interpreter` flag covers scripts that are not directly executable.
+- **Any executable.** `pm3` supervises an arbitrary command line, and resolves
+  interpreters the way PM2 does — `.js` through node, `.py` through python,
+  binaries directly — with `--interpreter` and `--interpreter-args` to pin
+  either. See [Interpreters](#interpreters).
 - **Crash recovery.** Automatic restarts with `min_uptime` / unstable-restart
   tracking, restart budgets, restart delays, `stop_exit_codes` and
   `max_memory_restart`.
+- **PM2's look.** `list`, `describe` and `logs` use PM2's colors, table
+  borders, log prefixes and `--help` layout, so the two tools read the same —
+  see [Terminal colors](#terminal-colors).
 - **Built-in, optimized log rotation.** No external module, no `logrotate`
   cron job. Rotation is an O(1) `rename` + reopen performed by the daemon that
   owns the file descriptors — see [Log rotation](#log-rotation).
@@ -135,6 +140,10 @@ pm3 start ./worker.sh
 # Run a non-executable script through an interpreter.
 pm3 start ./jobs/digest.py --interpreter python3 --name digest
 
+# The extension already picks the interpreter (.js -> node); arguments for
+# the interpreter itself go before the script, as PM2 places them.
+pm3 start ./app.js --interpreter-args "--trace-warnings --max-old-space-size=512"
+
 # Pass arguments to the managed process after `--`.
 pm3 start ./server --name api -- --port 8080
 
@@ -246,7 +255,8 @@ Every `start` option has a config key of the same name:
 | `name` | string (default: the script's basename without its extension) |
 | `script` | string, required |
 | `args` | array of strings |
-| `interpreter` | string |
+| `interpreter` | string (`exec_interpreter` is accepted as PM2's alias) |
+| `interpreter_args` | string (split on whitespace) or array; PM2's `node_args` and `interpreterArgs` are accepted too |
 | `cwd` | string (default: the config file's directory) |
 | `env` | table of scalars |
 | `autorestart` | bool |
@@ -285,6 +295,56 @@ a failure in one app does not abort the rest of the file.
 directly, and options after the script are passed to the program, so
 `pm3 start sh -c 'echo hi'` works. Use `--config` when the ambiguity matters.
 
+## Interpreters
+
+PM2 never runs a script naked unless the file is a real executable, and pm3
+makes the same decisions:
+
+1. An explicit `--interpreter <cmd>` (or `interpreter = "..."` in a config
+   file) wins.
+2. Otherwise the extension picks the interpreter, from PM2's map: `.js` →
+   node, `.py` → python, `.sh` → bash, `.rb` → ruby, `.php` → php, `.pl` →
+   perl, `.coffee` → coffee, `.ls` → lsc, `.ts` / `.tsx` → bun.
+3. Otherwise a **binary** runs directly (shown as `<none>` in
+   `pm3 describe`), and any other file — a text file with no extension — is
+   handed to `node`, the way PM2 falls back to its own runtime.
+
+A missing interpreter fails the way PM2 reports it, rather than crashing:
+
+```console
+$ pm3 start ./worker.rb
+Interpreter ruby is NOT AVAILABLE in PATH. (type 'which ruby' to double check.)
+```
+
+Arguments meant for the interpreter itself are passed with
+`--interpreter-args` (`--node-args` is PM2's alias; both are accepted in
+config files, under `interpreter_args`, `node_args` or `interpreterArgs`):
+
+```sh
+pm3 start ./app.js --interpreter-args "--trace-warnings --max-old-space-size=512"
+```
+
+```toml
+interpreter_args = "--trace-warnings --max-old-space-size=512"   # split like a shell
+interpreter_args = ["--trace-warnings", "--max-old-space-size=512"]
+```
+
+The string form is split on whitespace, with single and double quotes grouping
+a run of spaces into one argument; the array form is taken as is. The arguments
+are placed before the script — `node --trace-warnings app.js` — so they reach
+`process.execArgv`. `pm3 describe` prints them, and `pm3 list` shows them in
+the command column.
+
+Python interpreters additionally get `PYTHONUNBUFFERED=1`, so their output
+appears in the logs as it is written instead of at exit, and a machine whose
+`python` does not exist falls back to `python3`. PM2's `exec_interpreter` is
+accepted as an alias of `interpreter`.
+
+`pm3 start <name>` for a process that is already known brings it back up from
+its **saved launch specification**, the way `pm2 start <name>` does: the
+interpreter and arguments it was created with are reused, rather than `name`
+being taken as a script path.
+
 ## Commands
 
 | Command | Description |
@@ -296,7 +356,7 @@ directly, and options after the script are passed to the program, so
 | `pm3 stop [name]` | Stop one process, or all when no name is given |
 | `pm3 restart [name]` | Restart one process, or all (resets the restart counter) |
 | `pm3 delete [name]` (alias `del`) | Stop and remove processes |
-| `pm3 logs [name] [--lines N] [--follow] [--err]` | Show (and follow) logs |
+| `pm3 logs [name] [--lines N] [--follow] [--out] [--err] [--raw] [--nostream]` | Show (and follow) logs |
 | `pm3 flush [name]` | Truncate the live log(s) |
 | `pm3 reloadLogs` | Rotate every managed log now |
 | `pm3 logrotate` | Show the rotation policy |
@@ -316,6 +376,7 @@ directly, and options after the script are passed to the program, so
 | `--config <file>` | Read the app list from a `pm3.toml` / `pm3.json` instead |
 | `-n`, `--name <name>` | Process name (default: script basename) |
 | `-i`, `--interpreter <cmd>` | Run `<script>` as an argument to `<cmd>` |
+| `--interpreter-args <arguments>` | Arguments for the interpreter, before the script (`--node-args` is PM2's alias) |
 | `--cwd <dir>` | Working directory |
 | `--merge-logs` | Send stderr into the stdout log |
 | `--out-file <path>` | stdout log path |
@@ -328,7 +389,31 @@ directly, and options after the script are passed to the program, so
 | `--kill-timeout <ms>` | Grace period before `SIGKILL` |
 | `--kill-signal <signal>` | Graceful signal (default `SIGTERM`) |
 | `--stop-exit-codes <a,b>` | Exit codes that should not trigger a restart |
+| `--log-date-format <fmt>` | Date prefix for log lines (accepted and stored) |
 | `-e`, `--env KEY=VALUE` | Set an environment variable (repeatable) |
+
+## Terminal colors
+
+`pm3 list`, `pm3 describe` and `pm3 logs` use PM2's palette: grey table
+borders, bold-cyan headers and ids, green `online`, blue `launching`, yellow
+`restarting`, red for anything failed, and the blue `PM3 |` prefix on daemon
+log lines. `pm3 help` is laid out the way commander prints PM2's help, and
+`pm3 logs` prefixes every line with the same `id|name |` column PM2 uses.
+
+Colors are emitted only when standard output is a terminal, so piping `pm3
+list` into a file or a log collector gives plain text. `FORCE_COLOR=1` forces
+them on (a non-empty `FORCE_COLOR=0` forces them off), `NO_COLOR` turns them
+off, and `pm3 --no-color <command>` does the same for one invocation.
+
+## Exit status
+
+A command that could not do what it was asked to exits with status `1` — a
+`pm3 start` whose script or interpreter is missing, `pm3 describe`, `pm3 stop`
+and friends for an unknown process, an unknown option or command, or a config
+file whose apps failed to start. Like PM2, `pm3 start` of a config file still
+launches the apps that can start and then exits non-zero, and running `pm3`
+with no command prints the usage block and exits `1`. Successful commands —
+and `--help` / `--version` — exit `0`.
 
 ## How it works
 

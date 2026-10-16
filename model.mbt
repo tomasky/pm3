@@ -32,6 +32,10 @@ pub(all) struct App {
   /// Empty means "execute `script` directly"; otherwise `script` is passed as
   /// the first argument to this interpreter (e.g. `python3`, `node`, `bash`).
   mut interpreter : String
+  /// Arguments passed to the interpreter, before the script — PM2's
+  /// `node_args` / `interpreter_args`. For example `["--harmony"]` turns
+  /// `node script.js` into `node --harmony script.js`.
+  mut interpreter_args : Array[String]
   mut cwd : String
   mut env : Map[String, String]
   // --- logs ---
@@ -90,6 +94,7 @@ pub fn App::new(name : String, script : String, args : Array[String]) -> App {
     script,
     args,
     interpreter: "",
+    interpreter_args: [],
     cwd: "",
     env: Map([]),
     out_log: default_log_path(name, "out"),
@@ -122,11 +127,13 @@ pub fn App::new(name : String, script : String, args : Array[String]) -> App {
 }
 
 ///|
-/// The argv pm3 will execute for this app: the interpreter (if any) followed
-/// by the script and its arguments.
+/// The argv pm3 will execute for this app: the interpreter (if any), its
+/// arguments, then the script and the script's own arguments.
 pub fn App::command_line(self : App) -> (String, Array[String]) {
   if self.interpreter.length() > 0 && self.interpreter != "none" {
-    let argv : Array[String] = [self.script]
+    let argv : Array[String] = []
+    argv.push_iter(self.interpreter_args.iter())
+    argv.push(self.script)
     argv.push_iter(self.args.iter())
     (self.interpreter, argv)
   } else {

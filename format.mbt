@@ -34,6 +34,48 @@ pub fn truncate_text(text : String, width : Int) -> String {
 }
 
 ///|
+/// Split `text` the way PM2 splits option values that are meant to be argument
+/// lists: on whitespace, with single and double quotes grouping a run of
+/// spaces into one word. The quotes themselves are not part of the words.
+///
+/// `--max-old-space-size=4096 --trace-warnings` becomes two arguments, and so
+/// does `--require "lib/setup file.js"`.
+pub fn split_shell_words(text : String) -> Array[String] {
+  let out : Array[String] = []
+  let buf = StringBuilder()
+  let mut quote : Char? = None
+  let mut in_word = false
+  for char in text {
+    match quote {
+      Some(open) =>
+        if char == open {
+          quote = None
+        } else {
+          buf.write_char(char)
+        }
+      None =>
+        if char == '"' || char == '\'' {
+          quote = Some(char)
+          in_word = true
+        } else if char == ' ' || char == '\t' || char == '\n' || char == '\r' {
+          if in_word {
+            out.push(buf.to_string())
+            buf.reset()
+            in_word = false
+          }
+        } else {
+          buf.write_char(char)
+          in_word = true
+        }
+    }
+  }
+  if in_word {
+    out.push(buf.to_string())
+  }
+  out
+}
+
+///|
 /// Render a millisecond duration as a short human string.
 pub fn format_duration(millis : Int64) -> String {
   if millis <= 0L {
@@ -63,6 +105,11 @@ pub fn format_duration(millis : Int64) -> String {
 /// `header` is optional. `pm3 describe` passes `None` to get the key/value
 /// shape `pm2 show` prints; `pm3 list` passes column names.
 ///
+/// With `style` set the table is colored the way PM2 colors it: grey borders,
+/// a bold cyan header row, and — for the headerless key/value shape — a bold
+/// cyan first column. Cells may already contain ANSI codes; their widths are
+/// measured on the visible text.
+///
 /// ```
 /// ┌────┬────────┐
 /// │ id │ name   │
@@ -73,6 +120,7 @@ pub fn format_duration(millis : Int64) -> String {
 pub fn render_box(
   header : Array[String]?,
   rows : Array[Array[String]],
+  style~ : Bool = false,
 ) -> String {
   let mut columns = match header {
     Some(cells) => cells.length()
@@ -94,8 +142,8 @@ pub fn render_box(
   }
   let measure = fn(cells : Array[String]) {
     for index in 0..<columns {
-      if index < cells.length() && cells[index].length() > widths[index] {
-        widths[index] = cells[index].length()
+      if index < cells.length() && visible_width(cells[index]) > widths[index] {
+        widths[index] = visible_width(cells[index])
       }
     }
   }
@@ -106,40 +154,47 @@ pub fn render_box(
   for row in rows {
     measure(row)
   }
+  let headerless = header is None
   let buf = StringBuilder()
+  let bar = if style { style_gray("│") } else { "│" }
   let border = fn(left : String, middle : String, right : String) {
-    buf.write_string(left)
+    let line = StringBuilder()
+    line.write_string(left)
     for index in 0..<columns {
       for _ in 0..<(widths[index] + 2) {
-        buf.write_string("─")
+        line.write_string("─")
       }
-      buf.write_string(if index + 1 < columns { middle } else { right })
+      line.write_string(if index + 1 < columns { middle } else { right })
     }
+    let text = line.to_string()
+    buf.write_string(if style { style_gray(text) } else { text })
     buf.write_string("\n")
   }
-  let content = fn(cells : Array[String]) {
-    buf.write_string("│")
+  let content = fn(cells : Array[String], is_header : Bool) {
+    buf.write_string(bar)
     for index in 0..<columns {
       let cell = if index < cells.length() { cells[index] } else { "" }
-      buf.write_string(" ")
-      buf.write_string(cell)
-      for _ in 0..<(widths[index] + 1 - cell.length()) {
-        buf.write_string(" ")
+      let inner = pad_visible(" " + cell, widths[index] + 2, ' ')
+      // PM2 colors the whole padded cell, not just its text.
+      if style && (is_header || (headerless && index == 0)) {
+        buf.write_string(bold_cyan(inner))
+      } else {
+        buf.write_string(inner)
       }
-      buf.write_string("│")
+      buf.write_string(bar)
     }
     buf.write_string("\n")
   }
   border("┌", "┬", "┐")
   match header {
     Some(cells) => {
-      content(cells)
+      content(cells, true)
       border("├", "┼", "┤")
     }
     None => ()
   }
   for row in rows {
-    content(row)
+    content(row, false)
   }
   border("└", "┴", "┘")
   buf.to_string()

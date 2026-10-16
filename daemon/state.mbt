@@ -120,6 +120,26 @@ pub fn DaemonState::remove(self : DaemonState, id : Int) -> Unit {
 }
 
 ///|
+/// Fill in the fields a dump written by an older pm3 did not have, so an
+/// upgrade does not lose the process list to a single missing key.
+fn with_app_defaults(json : Json) -> Json {
+  match json {
+    Json::Object(members) =>
+      match @json.to_json(@pm3.App::new("", "", [])) {
+        Json::Object(defaults) =>
+          for key, value in defaults {
+            if !members.contains(key) {
+              members.set(key, value)
+            }
+          }
+        _ => ()
+      }
+    _ => ()
+  }
+  json
+}
+
+///|
 /// Load the process table from `dump.json`, if present.
 pub async fn DaemonState::load(self : DaemonState) -> Unit {
   let path = @pm3.pm3_dump_path()
@@ -128,9 +148,18 @@ pub async fn DaemonState::load(self : DaemonState) -> Unit {
     return
   }
   let text = @fs.read_file(path).text() catch { _ => return }
-  let apps : Array[@pm3.App] = @json.from_json(@json.parse(text)) catch {
-    _ => return
+  let parsed = @json.parse(text) catch { _ => return }
+  let patched = match parsed {
+    Json::Array(items) => {
+      let out : Array[Json] = []
+      for item in items {
+        out.push(with_app_defaults(item))
+      }
+      Json::array(out)
+    }
+    _ => parsed
   }
+  let apps : Array[@pm3.App] = @json.from_json(patched) catch { _ => return }
   for app in apps {
     if app.pm_id >= self.next_id {
       self.next_id = app.pm_id + 1

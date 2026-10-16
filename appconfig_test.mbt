@@ -294,3 +294,88 @@ test "app config: a config file on disk is read, and only toml or json are" {
     _ => ()
   }
 }
+
+///|
+test "app config: interpreter args come from PM2's field names" {
+  // A single string is split on whitespace, the way PM2 splits it.
+  let scalar = config_apps(
+    "[[app]]\nname = \"a\"\nscript = \"./a.js\"\n" +
+    "interpreter_args = \"--trace-warnings --max-old-space-size=512\"\n",
+    "/srv",
+  )
+  assert_eq(scalar[0].interpreter_args, [
+    "--trace-warnings", "--max-old-space-size=512",
+  ])
+  // The array form is taken as-is.
+  let array_form = config_apps(
+    "[[app]]\nname = \"b\"\nscript = \"./b.js\"\n" +
+    "interpreter_args = [\"--harmony\", \"--expose-gc\"]\n",
+    "/srv",
+  )
+  assert_eq(array_form[0].interpreter_args, ["--harmony", "--expose-gc"])
+  // PM2's own spelling, and the camelCase one.
+  let node_args = config_apps(
+    "[[app]]\nname = \"c\"\nscript = \"./c.js\"\n" +
+    "node_args = \"--enable-source-maps\"\n",
+    "/srv",
+  )
+  assert_eq(node_args[0].interpreter_args, ["--enable-source-maps"])
+  let camel = config_apps(
+    "[[app]]\nname = \"d\"\nscript = \"./d.js\"\ninterpreterArgs = [\"--inspect\"]\n",
+    "/srv",
+  )
+  assert_eq(camel[0].interpreter_args, ["--inspect"])
+  // A config that says nothing about them gets an empty list.
+  let plain = config_apps("[[app]]\nname = \"e\"\nscript = \"sh\"\n", "/srv")
+  assert_eq(plain[0].interpreter_args, [])
+}
+
+///|
+test "app config: [defaults] can set interpreter args" {
+  let apps = config_apps(
+    "[defaults]\ninterpreter_args = \"--max-old-space-size=256\"\n" +
+    "\n[[app]]\nname = \"a\"\nscript = \"./a.js\"\n" +
+    "\n[[app]]\nname = \"b\"\nscript = \"./b.js\"\ninterpreter_args = [\"--inspect\"]\n",
+    "/srv",
+  )
+  assert_eq(apps[0].interpreter_args, ["--max-old-space-size=256"])
+  assert_eq(apps[1].interpreter_args, ["--inspect"])
+}
+
+///|
+test "app config: exec_interpreter is an alias of interpreter" {
+  let apps = config_apps(
+    "[[app]]\nname = \"a\"\nscript = \"./a.js\"\nexec_interpreter = \"/usr/bin/node\"\n",
+    "/srv",
+  )
+  assert_eq(apps[0].interpreter, "/usr/bin/node")
+  // `interpreter` wins when both are present, since that is the pm3 spelling.
+  let both = config_apps(
+    "[[app]]\nname = \"a\"\nscript = \"./a.js\"\n" +
+    "interpreter = \"node\"\nexec_interpreter = \"deno\"\n",
+    "/srv",
+  )
+  assert_eq(both[0].interpreter, "node")
+}
+
+///|
+test "app config: interpreter args are validated" {
+  assert_eq(
+    config_error(
+      "[[app]]\nname = \"a\"\nscript = \"sh\"\ninterpreter_args = 3\n", "/srv",
+    ),
+    "'interpreter_args' must be an array of strings",
+  )
+  assert_eq(
+    config_error(
+      "[[app]]\nname = \"a\"\nscript = \"sh\"\nnode_args = [3]\n", "/srv",
+    ),
+    "every entry of 'node_args' must be a string",
+  )
+  assert_eq(
+    config_error(
+      "[[app]]\nname = \"a\"\nscript = \"sh\"\nexec_interpreter = 3\n", "/srv",
+    ),
+    "'exec_interpreter' must be a string",
+  )
+}

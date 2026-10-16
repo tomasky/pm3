@@ -64,6 +64,7 @@ fn apply_start_opts(app : @pm3.App, opts : Map[String, String]) -> Unit {
   for key, value in opts {
     match key {
       "interpreter" => app.interpreter = value
+      "interpreter_args" => app.interpreter_args = @pm3.split_shell_words(value)
       "cwd" => app.cwd = value
       "out_log" => app.out_log = value
       "err_log" => app.err_log = value
@@ -109,6 +110,46 @@ fn process_args_of(request : @pm3.Request) -> Array[String] {
 }
 
 ///|
+/// Start (or restart) `managed` from `script` and `args`, overridden by the
+/// request's options.
+///
+/// The candidate specification is resolved *before* the record is touched, so
+/// a start that cannot work — a script that is not there, an interpreter that
+/// is not on `PATH` — leaves the previous specification in place.
+async fn start_existing(
+  group : @async.TaskGroup[Unit],
+  state : DaemonState,
+  managed : Managed,
+  script : String,
+  args : Array[String],
+  request : @pm3.Request,
+) -> @pm3.Response {
+  if managed.app.is_online() {
+    return @pm3.Response::failure(
+      "\{managed.app.name} is already online (pm_id \{managed.app.pm_id})",
+    )
+  }
+  let candidate = @pm3.App::new(managed.app.name, script, args.copy())
+  copy_launch_spec(candidate, managed.app)
+  candidate.script = script
+  candidate.args = args.copy()
+  apply_start_opts(candidate, request.opts)
+  match resolve_start_spec(candidate) {
+    Err(message) => return @pm3.Response::failure(message)
+    Ok(_) => ()
+  }
+  copy_launch_spec(managed.app, candidate)
+  // An explicit start is a fresh chance: clear the old restart budget.
+  managed.app.restarts = 0
+  managed.app.unstable_restarts = 0
+  start_managed(group, state, managed)
+  state.save()
+  @pm3.Response::success(
+    "started \{managed.app.name} (pm_id \{managed.app.pm_id})",
+  )
+}
+
+///|
 /// Handle `start`.
 async fn handle_start(
   group : @async.TaskGroup[Unit],
@@ -119,34 +160,50 @@ async fn handle_start(
     return @pm3.Response::failure("start: missing script")
   }
   let script = request.args[0]
+  // `pm3 start <name>` on a name pm3 already manages brings the saved
+  // specification back, the way `pm2 start <name>` does: the argument is an
+  // app, not a file. A path — or a name that is not in the process list —
+  // starts something new.
+  if !script.contains("/") && request.opts.get("name") is None {
+    match state.find_by_name(script) {
+      Some(managed) =>
+        return start_existing(
+          group,
+          state,
+          managed,
+          managed.app.script,
+          managed.app.args,
+          request,
+        )
+      None => ()
+    }
+  }
   let name = match request.opts.get("name") {
     Some(n) if n.length() > 0 => n
     _ => derive_app_name(script)
   }
   match state.find_by_name(name) {
-    Some(managed) => {
-      if managed.app.is_online() {
-        return @pm3.Response::failure(
-          "\{name} is already online (pm_id \{managed.app.pm_id})",
-        )
-      }
-      managed.app.script = script
-      managed.app.args = process_args_of(request)
-      apply_start_opts(managed.app, request.opts)
-      // An explicit start is a fresh chance: clear the old restart budget.
-      managed.app.restarts = 0
-      managed.app.unstable_restarts = 0
-      start_managed(group, state, managed)
-      state.save()
-      @pm3.Response::success("started \{name} (pm_id \{managed.app.pm_id})")
-    }
+    Some(managed) =>
+      start_existing(
+        group,
+        state,
+        managed,
+        script,
+        process_args_of(request),
+        request,
+      )
     None => {
       let app = @pm3.App::new(name, script, process_args_of(request))
       apply_start_opts(app, request.opts)
-      let managed = state.add(app)
-      start_managed(group, state, managed)
-      state.save()
-      @pm3.Response::success("started \{name} (pm_id \{managed.app.pm_id})")
+      match resolve_start_spec(app) {
+        Err(message) => @pm3.Response::failure(message)
+        Ok(_) => {
+          let managed = state.add(app)
+          start_managed(group, state, managed)
+          state.save()
+          @pm3.Response::success("started \{name} (pm_id \{managed.app.pm_id})")
+        }
+      }
     }
   }
 }
@@ -159,6 +216,7 @@ fn copy_launch_spec(dst : @pm3.App, src : @pm3.App) -> Unit {
   dst.script = src.script
   dst.args = src.args
   dst.interpreter = src.interpreter
+  dst.interpreter_args = src.interpreter_args
   dst.cwd = src.cwd
   dst.env = src.env
   dst.out_log = src.out_log
@@ -178,11 +236,15 @@ fn copy_launch_spec(dst : @pm3.App, src : @pm3.App) -> Unit {
 ///|
 /// Bring up one app described by a config file, reusing the record of an app
 /// with the same name if there is one.
-fn launch_config_app(
+async fn launch_config_app(
   group : @async.TaskGroup[Unit],
   state : DaemonState,
   app : @pm3.App,
 ) -> String {
+  match resolve_start_spec(app) {
+    Err(message) => return "failed \{app.name}: \{message}"
+    Ok(_) => ()
+  }
   match state.find_by_name(app.name) {
     Some(managed) => {
       if managed.app.is_online() {
@@ -231,7 +293,14 @@ async fn handle_start_apps(
   }
   state.save()
   let summary = "\{started} of \{apps.length()} app(s) from the config file"
-  @pm3.Response::success(summary + "\n" + lines.join("\n"))
+  let body = summary + "\n" + lines.join("\n")
+  // PM2 starts what it can and still exits non-zero when an app could not be
+  // launched, so `pm3 start` in a CI script fails the same way.
+  if started < apps.length() {
+    @pm3.Response::failure(body)
+  } else {
+    @pm3.Response::success(body)
+  }
 }
 
 ///|

@@ -2,7 +2,16 @@
 /// The pm3 command-line interface.
 
 ///|
-let cli_version : String = "0.1.1"
+let cli_version : String = "0.1.2"
+
+///|
+/// `exit(3)`, so a command that failed can return a non-zero status the way
+/// PM2 does.
+extern "C" fn pm3_exit(status : Int) -> Unit = "pm3_exit"
+
+///|
+/// Set by `print_error`: the command failed, so the process exits non-zero.
+let command_failed : Ref[Bool] = Ref(false)
 
 ///|
 async fn print_line(text : String) -> Unit {
@@ -10,14 +19,38 @@ async fn print_line(text : String) -> Unit {
 }
 
 ///|
+/// Report a failure on standard error. Every call site means the command could
+/// not do what it was asked to, so the exit status becomes non-zero.
 async fn print_error(text : String) -> Unit {
+  command_failed.val = true
   @stdio.stderr.write(text + "\n")
 }
 
 ///|
-/// A bordered table with a header row, in PM2's shape.
+/// Whether the CLI should colour its output. Kept in one place so every view
+/// agrees.
+fn colors() -> Bool {
+  @pm3.colors_enabled()
+}
+
+///|
+/// PM2's colours for the process states: green while it runs, blue while it
+/// is coming up, yellow while it is being restarted or has never run, red
+/// when it is not running.
+fn style_status(status : String) -> String {
+  match status {
+    "online" => @pm3.green_bold(status)
+    "launching" => @pm3.blue_bold(status)
+    "restarting" => @pm3.yellow_bold(status)
+    "created" => @pm3.yellow_bold(status)
+    _ => @pm3.red_bold(status)
+  }
+}
+
+///|
+/// A bordered table with a header row, in PM2's shape and colours.
 fn render_table(headers : Array[String], rows : Array[Array[String]]) -> String {
-  @pm3.render_box(Some(headers), rows)
+  @pm3.render_box(Some(headers), rows, style=colors())
 }
 
 ///|
@@ -79,9 +112,9 @@ async fn cmd_list(args : Array[String]) -> Unit {
       total_mem = total_mem + app.memory
     }
     rows.push([
-      app.pm_id.to_string(),
+      @pm3.bold_cyan(app.pm_id.to_string()),
       @pm3.truncate_text(app.name, 24),
-      status,
+      style_status(status),
       @pm3.format_cpu_percent(app.cpu),
       @pm3.format_size_pm2(app.memory),
       app.restarts.to_string(),
@@ -117,7 +150,7 @@ async fn cmd_describe(args : Array[String]) -> Unit {
     let lines : Array[(String, String)] = [
       ("pm_id", app.pm_id.to_string()),
       ("name", app.name),
-      ("status", app.status),
+      ("status", style_status(app.status)),
       ("pid", app.pid.to_string()),
       ("command", app.command_display()),
       (
@@ -126,6 +159,14 @@ async fn cmd_describe(args : Array[String]) -> Unit {
           "<direct>"
         } else {
           app.interpreter
+        },
+      ),
+      (
+        "interpreter args",
+        if app.interpreter_args.length() == 0 {
+          "<none>"
+        } else {
+          app.interpreter_args.join(" ")
         },
       ),
       ("cwd", if app.cwd.length() == 0 { "<inherited>" } else { app.cwd }),
@@ -173,8 +214,12 @@ async fn cmd_describe(args : Array[String]) -> Unit {
       rows.push([key, value])
     }
     print_line("")
-    print_line(" Describing process with id \{app.pm_id} - name \{app.name} ")
-    @stdio.stdout.write(@pm3.render_box(None, rows))
+    print_line(
+      @pm3.bold_inverse(
+        " Describing process with id \{app.pm_id} - name \{app.name} ",
+      ),
+    )
+    @stdio.stdout.write(@pm3.render_box(None, rows, style=colors()))
   }
 }
 
@@ -200,9 +245,10 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
       continue
     }
     let needs_value = [
-      "--name", "-n", "--interpreter", "-i", "--cwd", "--out-file", "--err-file",
-      "--log-date-format", "--max-restarts", "--restart-delay", "--min-uptime", "--max-memory-restart",
-      "--kill-timeout", "--kill-signal", "--stop-exit-codes", "--env", "-e",
+      "--name", "-n", "--interpreter", "-i", "--interpreter-args", "--node-args",
+      "--cwd", "--out-file", "--err-file", "--log-date-format", "--max-restarts",
+      "--restart-delay", "--min-uptime", "--max-memory-restart", "--kill-timeout",
+      "--kill-signal", "--stop-exit-codes", "--env", "-e",
     ]
     if needs_value.contains(arg) {
       if i + 1 >= args.length() {
@@ -212,6 +258,8 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
       match arg {
         "--name" | "-n" => request.opts.set("name", value)
         "--interpreter" | "-i" => request.opts.set("interpreter", value)
+        "--interpreter-args" | "--node-args" =>
+          request.opts.set("interpreter_args", value)
         "--cwd" => request.opts.set("cwd", value)
         "--out-file" => request.opts.set("out_log", value)
         "--err-file" => request.opts.set("err_log", value)
@@ -369,56 +417,311 @@ async fn cmd_lifecycle(command : String, args : Array[String]) -> Unit {
 }
 
 ///|
-/// Print the last `lines` lines of a file.
-async fn tail_lines(path : String, lines : Int) -> Unit {
-  let text = @fs.read_file(path).text() catch { _ => return }
-  let all : Array[String] = []
-  for line in text.split("\n") {
-    all.push(line.to_owned())
-  }
-  // Drop the empty string produced by a trailing newline.
-  if all.length() > 0 && all[all.length() - 1].length() == 0 {
-    ignore(all.pop())
-  }
-  let start = if all.length() > lines { all.length() - lines } else { 0 }
-  for i in start..<all.length() {
-    print_line(all[i])
+/// What a log file's lines are: program output, program error output, or the
+/// daemon's own log.
+priv enum LogKind {
+  Out
+  Err
+  Daemon
+}
+
+///|
+/// Whether a log file carries the program's error output, which PM2 colours
+/// red.
+fn is_error_log(kind : LogKind) -> Bool {
+  match kind {
+    Err => true
+    _ => false
   }
 }
 
 ///|
-/// Follow a file, printing bytes appended after the initial position.
-async fn follow_file(path : String) -> Unit {
-  let mut offset = @fs.file_size(path) catch { _ => 0L }
+/// One file `pm3 logs` reads, with the prefix its lines carry.
+priv struct LogFile {
+  path : String
+  /// The `pm_id|name` label PM2 puts on every line; `PM3` for the daemon.
+  label : String
+  kind : LogKind
+  /// Modification time, used to order the files the way PM2 orders them.
+  mtime : Int64
+}
+
+///|
+/// Modification time as a single number, or 0 when the file cannot be read.
+async fn log_mtime(path : String) -> Int64 {
+  let (seconds, nanos) = @fs.mtime(path) catch { _ => return 0L }
+  seconds * 1_000_000_000L + nanos.to_int64()
+}
+
+///|
+/// The label PM2 prints in front of a process's log lines.
+fn log_label(app : @pm3.App) -> String {
+  "\{app.pm_id}|\{app.name}"
+}
+
+///|
+/// Pad (or cut) a label to `width` so log lines stay aligned, like PM2's
+/// `pad()`.
+fn pad_label(label : String, width : Int) -> String {
+  if label.length() >= width {
+    label.view(start_offset=0, end_offset=width).to_owned()
+  } else {
+    @pm3.pad_right(label, width, ' ')
+  }
+}
+
+///|
+/// The coloured `id|name | ` prefix a log line carries.
+fn log_prefix(kind : LogKind, label : String, width : Int) -> String {
+  let text = pad_label(label, width) + " | "
+  match kind {
+    Out => @pm3.style_green(text)
+    Err => @pm3.style_red(text)
+    Daemon => @pm3.style_blue(text)
+  }
+}
+
+///|
+/// Whether the list already holds a file with this path — PM2 never prints
+/// the same log file twice, even when two apps share it.
+fn collects_path(files : Array[LogFile], path : String) -> Bool {
+  for file in files {
+    if file.path == path {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// Order log files by modification time, oldest first — the order PM2 tails
+/// them in. The list is tiny, so a hand-rolled insertion sort is enough.
+fn sort_log_files(files : Array[LogFile]) -> Unit {
+  let mut i = 1
+  while i < files.length() {
+    let current = files[i]
+    let mut j = i
+    while j > 0 && files[j - 1].mtime > current.mtime {
+      files[j] = files[j - 1]
+      j = j - 1
+    }
+    files[j] = current
+    i = i + 1
+  }
+}
+
+///|
+/// The files `pm3 logs` reads, in the order PM2 shows them: the daemon's own
+/// log first (only when everything is being shown, and nothing narrowed the
+/// view), then every app log by modification time.
+async fn collect_log_files(
+  apps : Array[@pm3.App],
+  name : String,
+  use_out : Bool,
+  use_err : Bool,
+  raw : Bool,
+) -> Array[LogFile] {
+  let files : Array[LogFile] = []
+  if name.length() == 0 && !use_out && !use_err && !raw {
+    let path = @pm3.pm3_daemon_log_path()
+    let exists = @fs.exists(path) catch { _ => false }
+    if exists {
+      files.push({ path, label: "PM3", kind: Daemon, mtime: log_mtime(path), })
+    }
+  }
+  let app_files : Array[LogFile] = []
+  for app in apps {
+    if !use_err {
+      app_files.push({
+        path: app.out_log,
+        label: log_label(app),
+        kind: Out,
+        mtime: log_mtime(app.out_log),
+      })
+    }
+    if !use_out && !app.merge_logs {
+      app_files.push({
+        path: app.err_log,
+        label: log_label(app),
+        kind: Err,
+        mtime: log_mtime(app.err_log),
+      })
+    }
+  }
+  sort_log_files(app_files)
+  for file in app_files {
+    if file.path.length() == 0 || file.path.to_lower() == "/dev/null" {
+      continue
+    }
+    if !collects_path(files, file.path) {
+      files.push(file)
+    }
+  }
+  files
+}
+
+///|
+/// The lines of `bytes`, split at `\n`: the empty segment a trailing newline
+/// leaves is dropped, and a last line without a newline is kept. The views
+/// point into `bytes`, so no copy is made.
+fn byte_lines(bytes : Bytes) -> Array[BytesView] {
+  let out : Array[BytesView] = []
+  let length = bytes.length()
+  let mut start = 0
+  let mut i = 0
+  while i < length {
+    if bytes.unsafe_get(i) == b'\n' {
+      out.push(bytes[start:i])
+      start = i + 1
+    }
+    i = i + 1
+  }
+  if start < length {
+    out.push(bytes[start:length])
+  }
+  out
+}
+
+///|
+/// Print the last `lines` lines of one log file, each under its `id|name`
+/// prefix, the way `pm2 logs --nostream` does.
+///
+/// Lines are written as the bytes they were, so a log that is not valid UTF-8
+/// still shows what the program wrote.
+async fn tail_log_file(file : LogFile, lines : Int, raw : Bool) -> Unit {
+  let exists = @fs.exists(file.path) catch { _ => false }
+  if !exists {
+    return
+  }
+  let data = @fs.read_file(file.path) catch { _ => return }
+  let all = byte_lines(data.binary())
+  print_line(@pm3.style_gray(file.path + " last \{lines} lines:"))
+  let start = if all.length() > lines { all.length() - lines } else { 0 }
+  let mut printed = 0
+  for i in start..<all.length() {
+    write_log_line(file, all[i], 10, raw)
+    printed = printed + 1
+  }
+  if printed > 0 {
+    print_line("")
+  }
+}
+
+///|
+/// Write one log line: the bytes as they are under `--raw` (stderr goes to
+/// the error stream there, like PM2), or the coloured prefix plus the bytes.
+async fn write_log_line(
+  file : LogFile,
+  line : BytesView,
+  width : Int,
+  raw : Bool,
+) -> Unit {
+  if raw {
+    if is_error_log(file.kind) {
+      @stdio.stderr.write(line)
+      @stdio.stderr.write("\n")
+    } else {
+      @stdio.stdout.write(line)
+      @stdio.stdout.write("\n")
+    }
+  } else {
+    @stdio.stdout.write(log_prefix(file.kind, file.label, width))
+    @stdio.stdout.write(line)
+    @stdio.stdout.write("\n")
+  }
+}
+
+///|
+/// Print every line of `bytes` (which ends with a newline) that has content.
+/// Empty lines are skipped, the way `pm2 logs` streams them.
+async fn stream_lines(
+  file : LogFile,
+  bytes : Bytes,
+  width : Int,
+  raw : Bool,
+) -> Unit {
+  let length = bytes.length()
+  let mut start = 0
+  let mut i = 0
+  while i < length {
+    if bytes.unsafe_get(i) == b'\n' {
+      if i > start {
+        write_log_line(file, bytes[start:i], width, raw)
+      }
+      start = i + 1
+    }
+    i = i + 1
+  }
+}
+
+///|
+/// Index of the last `\n` in `bytes`, when there is one.
+fn last_newline(bytes : Bytes) -> Int? {
+  let mut index : Int? = None
+  for i in 0..<bytes.length() {
+    if bytes[i] == b'\n' {
+      index = Some(i)
+    }
+  }
+  index
+}
+
+///|
+/// Follow one log file, printing every line appended after this call under
+/// the same prefix the tail used. Lines are assembled from whole reads, so a
+/// line split across two read chunks is printed once.
+async fn follow_log_file(file : LogFile, width : Int, raw : Bool) -> Unit {
+  let mut offset = @fs.file_size(file.path) catch { _ => 0L }
+  let mut rest : Bytes = b""
   while true {
     @async.sleep(400)
-    let size = @fs.file_size(path) catch { _ => continue }
+    let size = @fs.file_size(file.path) catch { _ => continue }
     if size < offset {
+      // Rotated or truncated: start over from the top of the new file.
       offset = 0L
+      rest = b""
     }
     if size > offset {
-      let file = @fs.open(path, mode=@fs.ReadOnly, create_mode=@fs.OpenExisting) catch {
+      let handle = @fs.open(
+        file.path,
+        mode=@fs.ReadOnly,
+        create_mode=@fs.OpenExisting,
+      ) catch {
         _ => continue
       }
       let want = (size - offset).to_int()
       let buf = FixedArray::make(want, b'\x00')
-      let got = file.read_at(buf, position=offset) catch { _ => 0 }
-      file.close()
+      let got = handle.read_at(buf, position=offset) catch { _ => 0 }
+      handle.close()
       if got > 0 {
         offset = offset + got.to_int64()
-        @stdio.stdout.write(buf.unsafe_reinterpret_as_bytes()[:got])
+        let chunk = rest + buf.unsafe_reinterpret_as_bytes()[:got].to_owned()
+        match last_newline(chunk) {
+          None => rest = chunk
+          Some(index) => {
+            let complete = chunk[:index + 1].to_owned()
+            rest = chunk[index + 1:].to_owned()
+            stream_lines(file, complete, width, raw)
+          }
+        }
       }
     }
   }
 }
 
 ///|
-/// `pm3 logs [name] [--lines N] [--follow] [--err]`
+/// `pm3 logs [name|id] [--lines N] [--follow] [--out|--err] [--raw]`
+///
+/// The tail is printed the way `pm2 logs` prints it: the daemon's own log
+/// first, then every app log under an aligned, colour-coded `id|name` prefix.
+/// `--follow` then streams new lines like `pm2 logs` does by default.
 async fn cmd_logs(args : Array[String]) -> Unit {
   let mut name = ""
   let mut lines = 20
   let mut follow = false
   let mut use_err = false
+  let mut use_out = false
+  let mut raw = false
   let mut i = 0
   while i < args.length() {
     let arg = args[i]
@@ -433,40 +736,67 @@ async fn cmd_logs(args : Array[String]) -> Unit {
         }
       "--follow" | "-f" => follow = true
       "--err" | "--error" => use_err = true
+      "--out" => use_out = true
+      "--raw" => raw = true
+      "--nostream" => () // tail without following: the default here
       _ =>
         if arg.has_prefix("-") {
           print_error("pm3: unknown option \{arg}")
           return
-        } else {
+        } else if name.length() == 0 {
+          // PM2 takes a single process name or id here; extra words are
+          // ignored, so the first one wins.
           name = arg
         }
     }
     i = i + 1
   }
   let apps = fetch_apps()
+  let is_all = name.length() == 0
   let selected : Array[@pm3.App] = []
   for app in apps {
-    if name.length() == 0 || app.name == name {
+    let by_id = match @pm3.parse_non_negative_int(name) {
+      Some(id) => id == app.pm_id
+      None => false
+    }
+    if is_all || app.name == name || by_id {
       selected.push(app)
     }
   }
-  if selected.length() == 0 {
+  if !is_all && selected.length() == 0 {
     print_error("pm3: no matching process")
     return
   }
-  for app in selected {
-    let path = if use_err && !app.merge_logs {
-      app.err_log
-    } else {
-      app.out_log
+  let files = collect_log_files(selected, name, use_out, use_err, raw)
+  if lines > 0 {
+    let display_id = if is_all { "all" } else { name }
+    let plural = if is_all { "es" } else { "" }
+    print_line(
+      @pm3.bold_gray(
+        "[TAILING] Tailing last \{lines} lines for [\{display_id}] process\{plural} (change the value with --lines option)",
+      ),
+    )
+    for file in files {
+      tail_log_file(file, lines, raw)
     }
-    if selected.length() > 1 {
-      print_line("====> \{app.name} (\{path})")
+  }
+  if follow {
+    // PM2's streaming prefix grows to fit the longest `id|name`; with the
+    // whole list in hand it is known before the first line arrives.
+    let mut width = 3
+    for file in files {
+      if file.label.length() + 1 > width {
+        width = file.label.length() + 1
+      }
     }
-    tail_lines(path, lines)
-    if follow {
-      follow_file(path)
-    }
+    @async.with_task_group(group => {
+      for file in files {
+        group.spawn_bg(() => follow_log_file(file, width, raw))
+      }
+      while true {
+        @async.sleep(1000)
+      }
+    })
   }
 }
 
@@ -658,70 +988,135 @@ async fn cmd_version() -> Unit {
 
 ///|
 /// `pm3 help`
+///
+/// The layout follows PM2's: a `Usage:` line, then `Options:` and `Commands:`
+/// sections whose two columns are aligned on the longest entry, exactly like
+/// commander renders them for `pm2 --help`.
 async fn print_help() -> Unit {
-  let text =
-    #|pm3 - a language-agnostic process manager with built-in log rotation
-    #|
-    #|Usage: pm3 <command> [options]
-    #|
-    #|Processes:
-    #|  start <script> [options] [-- args...]   start a process
-    #|  list | ls                               list managed processes
-    #|  describe <name>                         show one process in detail
-    #|  stop [name]                             stop one or all processes
-    #|  restart [name]                          restart one or all processes
-    #|  delete [name] | del                     stop and remove processes
-    #|
-    #|Apps from a config file (pm3.toml / pm3.json):
-    #|  start [--config <file>]                 start every app the file declares
-    #|  config apps [--config <file>]           show what that would start, without starting it
-    #|
-    #|Logs:
-    #|  logs [name] [--lines N] [--follow]      show (and follow) logs
-    #|  flush                                   truncate all managed logs
-    #|  reloadLogs                              rotate all managed logs now
-    #|
-    #|Log rotation (the policy is global, not per project):
-    #|  logrotate                               show the rotation policy
-    #|  set logrotate:<key> <value>             change the rotation policy
-    #|
-    #|Global config file:
-    #|  config                                  show it and its contents
-    #|  config init [toml|json] [--force]       create it
-    #|
-    #|Daemon:
-    #|  save                                    persist the process list
-    #|  resurrect                               start saved processes
-    #|  kill                                    stop the daemon
-    #|  version                                 print the version
-    #|
-    #|start options:
-    #|      --config <file>            read apps from a pm3.toml / pm3.json
-    #|  -n, --name <name>              process name (default: script basename)
-    #|  -i, --interpreter <cmd>        run <script> through <cmd>
-    #|      --cwd <dir>                working directory
-    #|      --merge-logs               merge stderr into stdout's log
-    #|      --out-file <path>          stdout log path
-    #|      --err-file <path>          stderr log path
-    #|      --log-date-format <fmt>    (reserved) timestamp format
-    #|      --no-autorestart           do not restart on exit
-    #|      --max-restarts <n>         restart budget (0 = unlimited)
-    #|      --restart-delay <ms>       delay before restarting
-    #|      --min-uptime <ms>          below this the restart is "unstable"
-    #|      --max-memory-restart <size> restart when RSS exceeds this
-    #|      --kill-timeout <ms>        SIGKILL grace period
-    #|      --kill-signal <signal>     graceful signal (default SIGTERM)
-    #|      --stop-exit-codes <a,b>    exit codes that stop restarts
-    #|  -e, --env KEY=VALUE            set an environment variable
-    #|
-    #|Configuration lives in $PM3_HOME/config.toml or config.json (TOML and
-    #|JSON only); `logrotate.json` is still read for compatibility.
-    #|
-    #|Log rotation options (pm3 set logrotate:<key> <value>):
-    #|  max_size, min_size, retain, max_age_days, compress, compression_level,
-    #|  date_format, worker_interval, rotate_interval, tz, rotate_module
-    #|
-  print_line(text)
+  let options : Array[(String, String)] = [
+    ("-v, --version", "print the pm3 version"),
+    ("-h, --help", "show this help"),
+    ("--no-color", "disable colored output"),
+  ]
+  let commands : Array[(String, String)] = [
+    ("start [options] [name|file|config]", "start and daemonize an app"),
+    ("list | ls [--json]", "list managed processes"),
+    ("describe <name|id>", "describe all parameters of a process"),
+    ("stop [name|id|all]", "stop one or all processes"),
+    ("restart [name|id|all]", "restart one or all processes"),
+    ("delete [name|id|all]", "stop and delete one or all processes"),
+    (
+      "logs [name|id] [options]", "tail and stream logs (--follow, --lines N, --out, --err, --raw)",
+    ),
+    ("flush [name|id]", "empty the logs of one or all processes"),
+    ("reloadLogs", "rotate the logs of all processes now"),
+    ("logrotate", "show the log rotation policy"),
+    ("set logrotate:<key> <value>", "change the log rotation policy"),
+    ("config [init|apps] [...]", "show or create the global config file"),
+    ("save", "save the process list"),
+    ("resurrect", "bring saved processes back up"),
+    ("kill", "kill the pm3 daemon"),
+    ("version", "print the pm3 version"),
+    ("help", "show this help"),
+  ]
+  let width = help_width([options, commands])
+  let buf = StringBuilder()
+  buf.write_string("\n")
+  buf.write_string("  Usage: pm3 [cmd] app\n")
+  buf.write_string("\n  Options:\n\n")
+  buf.write_string(render_help_entries(options, width))
+  buf.write_string("\n  Commands:\n\n")
+  buf.write_string(render_help_entries(commands, width))
+  print_line(buf.to_string().trim_end(chars="\n").to_owned())
+}
+
+///|
+/// The longest left column over several help groups, so `pm3 --help` aligns
+/// options and commands on the same column the way commander does.
+fn help_width(groups : Array[Array[(String, String)]]) -> Int {
+  let mut width = 0
+  for group in groups {
+    for entry in group {
+      let (left, _) = entry
+      if left.length() > width {
+        width = left.length()
+      }
+    }
+  }
+  width
+}
+
+///|
+/// Render a two-column help block: four spaces of indent, the left column
+/// padded to `width`, two spaces, the description.
+fn render_help_entries(
+  entries : Array[(String, String)],
+  width : Int,
+) -> String {
+  let buf = StringBuilder()
+  for entry in entries {
+    let (left, description) = entry
+    buf.write_string(
+      "    " + @pm3.pad_right(left, width, ' ') + "  " + description + "\n",
+    )
+  }
+  buf.to_string()
+}
+
+///|
+/// `pm3 start -h` — the options `pm3 start` understands, plus the interpreter
+/// rule PM2 applies when none is given.
+async fn print_start_help() -> Unit {
+  let options : Array[(String, String)] = [
+    ("--config <file>", "read the apps from a pm3.toml / pm3.json"),
+    ("-n, --name <name>", "process name (default: script basename)"),
+    ("-i, --interpreter <cmd>", "run <script> through <cmd>"),
+    (
+      "--interpreter-args <arguments>", "arguments passed to the interpreter before the script",
+    ),
+    ("--node-args <arguments>", "alias of --interpreter-args"),
+    ("--cwd <dir>", "working directory"),
+    ("--merge-logs", "merge stderr into stdout's log"),
+    ("--out-file <path>", "stdout log path"),
+    ("--err-file <path>", "stderr log path"),
+    ("--log-date-format <fmt>", "(reserved) timestamp format"),
+    ("--no-autorestart", "do not restart the process when it exits"),
+    ("--max-restarts <n>", "restart budget (0 = unlimited)"),
+    ("--restart-delay <ms>", "delay before each restart"),
+    ("--min-uptime <ms>", "below this a restart counts as unstable"),
+    ("--max-memory-restart <size>", "restart when RSS exceeds <size>"),
+    ("--kill-timeout <ms>", "grace period before SIGKILL"),
+    ("--kill-signal <signal>", "graceful signal (default: SIGTERM)"),
+    ("--stop-exit-codes <a,b>", "exit codes that should not restart"),
+    ("-e, --env KEY=VALUE", "set an environment variable (repeatable)"),
+  ]
+  let buf = StringBuilder()
+  buf.write_string("\n")
+  buf.write_string("  Usage: start [options] <script> [-- args...]\n")
+  buf.write_string("\n  Options:\n\n")
+  buf.write_string(render_help_entries(options, help_width([options])))
+  buf.write_string("\n")
+  buf.write_string(
+    "  Every script runs under PM2's interpreter rules: the extension picks it\n" +
+    "  (.js -> node, .py -> python, .sh -> bash, ..., text -> node) unless\n" +
+    "  --interpreter says otherwise.\n",
+  )
+  print_line(buf.to_string().trim_end(chars="\n").to_owned())
+}
+
+///|
+/// The short usage block `pm2` prints when it is run with no command, with
+/// pm3's paths.
+async fn print_usage() -> Unit {
+  print_line("usage: pm3 [options] <command>")
+  print_line("")
+  print_line(
+    "pm3 -h, --help               show all available commands and options",
+  )
+  print_line("pm3 <command> -h             help on a specific command")
+  print_line("pm3 logs <name> --follow     stream a process's logs")
+  print_line("")
+  print_line("Access pm3 files in \{@pm3.pm3_home()}")
 }
 
 ///|
@@ -730,10 +1125,17 @@ pub async fn main_cli() -> Unit {
   let argv = @env.args()
   let args : Array[String] = []
   for i in 1..<argv.length() {
-    args.push(argv[i])
+    let arg = argv[i]
+    if arg == "--no-color" {
+      @pm3.set_colors_enabled(false)
+    } else {
+      args.push(arg)
+    }
   }
   if args.length() == 0 {
-    print_help()
+    print_usage()
+    // PM2 exits 1 when it is called without a command; scripts rely on that.
+    pm3_exit(1)
     return
   }
   let command = args[0]
@@ -743,7 +1145,12 @@ pub async fn main_cli() -> Unit {
   }
   match command {
     "daemon" => @daemon.run_daemon()
-    "start" => cmd_start(rest)
+    "start" =>
+      if rest.length() > 0 && (rest[0] == "-h" || rest[0] == "--help") {
+        print_start_help()
+      } else {
+        cmd_start(rest)
+      }
     "list" | "ls" | "ps" | "status" => cmd_list(rest)
     "describe" | "desc" | "show" => cmd_describe(rest)
     "stop" => cmd_lifecycle("stop", rest)
@@ -774,7 +1181,10 @@ pub async fn main_cli() -> Unit {
     "help" | "--help" | "-h" => print_help()
     _ => {
       print_error("pm3: unknown command '\{command}'")
-      print_help()
+      print_usage()
     }
   }
+  // One process per command, so the exit status is decided here: success
+  // prints without ever calling `print_error`.
+  pm3_exit(if command_failed.val { 1 } else { 0 })
 }

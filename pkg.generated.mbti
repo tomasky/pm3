@@ -15,6 +15,16 @@ pub fn app_field_names() -> Array[String]
 
 pub fn apps_from_json(Json, String) -> Result[Array[App], String]
 
+pub fn bg_black_bright(String) -> String
+
+pub fn blue_bold(String) -> String
+
+pub fn bold_cyan(String) -> String
+
+pub fn bold_gray(String) -> String
+
+pub fn bold_inverse(String) -> String
+
 pub fn civil_from_days(Int) -> (Int, Int, Int)
 
 pub let cmd_delete : String
@@ -50,6 +60,8 @@ pub let cmd_start : String
 pub let cmd_start_apps : String
 
 pub let cmd_stop : String
+
+pub fn colors_enabled() -> Bool
 
 pub fn config_format_of(String) -> ConfigFormat?
 
@@ -91,9 +103,17 @@ pub fn format_size_pm2(Int64, precision? : Int) -> String
 
 pub fn format_timestamp(Int64, Int, String) -> String
 
+pub fn green_bold(String) -> String
+
 pub fn has_apps(Json) -> Bool
 
+pub fn interpreter_for_extension(String) -> String?
+
 pub fn is_app_config_file(String) -> Bool
+
+pub fn is_binary_content(Bytes) -> Bool
+
+pub fn is_python_interpreter(String) -> Bool
 
 pub fn load_apps_from_file(String) -> Result[Array[App], String]
 
@@ -110,6 +130,8 @@ pub fn next_cron_fire(CronSpec, Int64, Int) -> Int64?
 pub fn pad_left_text(String, Int, Char) -> String
 
 pub fn pad_right(String, Int, Char) -> String
+
+pub fn pad_visible(String, Int, Char) -> String
 
 pub fn parse_bool_value(StringView) -> Bool?
 
@@ -145,6 +167,8 @@ pub fn pm3_dump_path() -> String
 
 pub fn pm3_home() -> String
 
+pub fn pm3_isatty(Int) -> Int
+
 pub fn pm3_log_dir() -> String
 
 pub fn pm3_logrotate_config_path() -> String
@@ -157,7 +181,9 @@ pub fn pm3_state_dir() -> String
 
 pub fn read_config_file(String) -> Result[Json, String]
 
-pub fn render_box(Array[String]?, Array[Array[String]]) -> String
+pub fn red_bold(String) -> String
+
+pub fn render_box(Array[String]?, Array[Array[String]], style? : Bool) -> String
 
 pub fn render_config(LogrotateConfig, ConfigFormat) -> String
 
@@ -167,7 +193,13 @@ pub fn rotation_due(Int64, LogrotateConfig) -> Bool
 
 pub fn save_logrotate_config(LogrotateConfig, ConfigSource) -> Result[Unit, String]
 
+pub fn script_extension(String) -> String
+
 pub fn select_for_deletion(Array[RotatedFile], Int, Int, Int64) -> Array[String]
+
+pub fn set_colors_enabled(Bool) -> Unit
+
+pub fn split_shell_words(String) -> Array[String]
 
 pub fn split_timestamp(Int64) -> (Int, Int, Int, Int, Int, Int, Int)
 
@@ -183,11 +215,33 @@ pub let status_stopping : String
 
 pub fn strip_suffix_owned(String, String) -> String
 
+pub fn style_blue(String) -> String
+
+pub fn style_bold(String) -> String
+
+pub fn style_cyan(String) -> String
+
+pub fn style_dim(String) -> String
+
+pub fn style_gray(String) -> String
+
+pub fn style_green(String) -> String
+
+pub fn style_inverse(String) -> String
+
+pub fn style_red(String) -> String
+
+pub fn style_yellow(String) -> String
+
 pub fn truncate_text(String, Int) -> String
+
+pub fn visible_width(String) -> Int
 
 pub fn weekday_from_days(Int) -> Int
 
 pub fn write_default_config(ConfigFormat, Bool) -> Result[String, String]
+
+pub fn yellow_bold(String) -> String
 
 // Errors
 
@@ -198,6 +252,7 @@ pub(all) struct App {
   mut script : String
   mut args : Array[String]
   mut interpreter : String
+  mut interpreter_args : Array[String]
   mut cwd : String
   mut env : Map[String, String]
   mut out_log : String
