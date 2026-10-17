@@ -77,6 +77,10 @@ pub fn parse_bool_value(text : StringView) -> Bool? {
 
 ///|
 /// A rotated log file: its name and modification time.
+///
+/// The modification time is in nanoseconds since the epoch. Sub-second
+/// precision matters: a busy log can rotate several times inside one second,
+/// and retention has to tell those files apart to keep the true newest ones.
 pub(all) struct RotatedFile {
   name : String
   mtime : Int64
@@ -134,9 +138,10 @@ pub fn rotation_due(size : Int64, config : LogrotateConfig) -> Bool {
 ///|
 /// Choose which rotated files to delete.
 ///
-/// Files are ordered newest-first by modification time; everything after the
-/// first `retain` is deleted. When `max_age_days > 0`, files older than that
-/// are deleted as well, regardless of position.
+/// Files are ordered newest-first by modification time (nanoseconds since the
+/// epoch); everything after the first `retain` is deleted. When
+/// `max_age_days > 0`, files older than that are deleted as well, regardless
+/// of position.
 pub fn select_for_deletion(
   files : Array[RotatedFile],
   retain : Int,
@@ -149,7 +154,7 @@ pub fn select_for_deletion(
   for i in 0..<sorted.length() {
     let file = sorted[i]
     let too_old = max_age_days > 0 &&
-      now - file.mtime > max_age_days.to_int64() * 86400L
+      now - file.mtime > max_age_days.to_int64() * 86400L * 1_000_000_000L
     if i >= retain || too_old {
       doomed.push(file.name)
     }

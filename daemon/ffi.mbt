@@ -43,6 +43,13 @@ pub extern "C" fn pm3_clk_tck() -> Int = "pm3_clk_tck"
 pub extern "C" fn pm3_set_process_title(title : Bytes) -> Unit = "pm3_set_process_title"
 
 ///|
+/// Point the daemon's stderr (fd 2) at `path`. The client opened `pm3.log`
+/// there when it spawned the daemon, so rotating that file has to move the
+/// descriptor to the fresh one.
+#borrow(path)
+pub extern "C" fn pm3_reopen_stderr(path : Bytes) -> Unit = "pm3_reopen_stderr"
+
+///|
 /// Signal numbers, as understood by `kill(2)`.
 pub let sig_term : Int = 15
 

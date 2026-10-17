@@ -9,6 +9,7 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
+#include <fcntl.h>
 #include <moonbit.h>
 #include <signal.h>
 #include <stdint.h>
@@ -146,4 +147,19 @@ void pm3_set_process_title(moonbit_bytes_t title) {
 #else
   (void)title;
 #endif
+}
+
+/* Point fd 2 at `path`, so the daemon's stderr follows its log across a
+ * rotation. The client that spawned the daemon opened `pm3.log` on that
+ * descriptor; rotating renames the file, and this reopens the fresh one. */
+MOONBIT_FFI_EXPORT
+void pm3_reopen_stderr(moonbit_bytes_t path) {
+  int fd = open((const char *)path, O_WRONLY | O_APPEND | O_CREAT, 0644);
+  if (fd < 0) {
+    return;
+  }
+  if (fd != STDERR_FILENO) {
+    dup2(fd, STDERR_FILENO);
+    close(fd);
+  }
 }

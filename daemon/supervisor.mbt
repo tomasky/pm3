@@ -51,6 +51,17 @@ fn stamp_lines(
 }
 
 ///|
+/// Run a per-app background task, reporting a failure on the daemon log
+/// instead of failing the daemon's task group: with `allow_failure=false`
+/// (the default) a single raise in a child would cancel every other task in
+/// the group, taking the whole daemon down with it.
+async fn guarded(name : String, body : async () -> Unit raise) -> Unit {
+  body() catch {
+    e => daemon_log("\{name} failed: \{e}")
+  }
+}
+
+///|
 /// Copy a child pipe into a log sink until EOF.
 ///
 /// When `log_date_format` is set — PM2's `--time` / `--log-date-format` —
@@ -68,18 +79,28 @@ async fn pump(
     match reader.read_some(max_len=65536) {
       None => break
       Some(bytes) => {
-        if !stamping {
-          sink.write(bytes)
-          continue
+        let data = if !stamping {
+          bytes
+        } else {
+          let now = @async.now() / 1000L
+          let stamp = @utf8.encode(
+            @pm3.format_timestamp(now, pm3_local_offset(now), log_date_format) +
+            ": ",
+          )
+          let (next_start, stamped) = stamp_lines(at_line_start, bytes, stamp)
+          at_line_start = next_start
+          stamped
         }
-        let now = @async.now() / 1000L
-        let stamp = @utf8.encode(
-          @pm3.format_timestamp(now, pm3_local_offset(now), log_date_format) +
-          ": ",
-        )
-        let (next_start, stamped) = stamp_lines(at_line_start, bytes, stamp)
-        at_line_start = next_start
-        sink.write(stamped)
+        // A log file can refuse the data — a full disk, most likely. Dropping
+        // the chunk must never break this drain: if the pump died, the app's
+        // stdout would hit a closed pipe and the app would be killed by its
+        // own logging. PM2 likewise keeps the app running and loses the
+        // lines; the sink reports the failure itself.
+        try {
+          sink.write(data)
+        } catch {
+          e => sink.note_write_failure(data.length(), "\{e}")
+        }
       }
     }
   }
@@ -183,8 +204,16 @@ async fn supervise(
     // Reset the CPU sample baseline: a new pid has a fresh tick counter.
     managed.last_cpu_ticks = 0L
     managed.last_cpu_at = 0L
-    group.spawn_bg(() => pump(read_out, out_sink, app.log_date_format))
-    group.spawn_bg(() => pump(read_err, err_sink, app.log_date_format))
+    // The pumps are per-app plumbing: whatever happens to them (a broken
+    // pipe, a log file the daemon cannot write) must not fail the daemon's
+    // task group — that would cancel every other task in it — so each runs
+    // under `guarded` and only reports.
+    group.spawn_bg(
+      () => guarded("log pump for \{app.name}", () => pump(read_out, out_sink, app.log_date_format)),
+    )
+    group.spawn_bg(
+      () => guarded("log pump for \{app.name}", () => pump(read_err, err_sink, app.log_date_format)),
+    )
     let code = proc.wait()
     app.mark_exited(code)
     managed.proc = None
@@ -217,7 +246,10 @@ pub fn start_managed(
   let app = managed.app
   app.desired_state = @pm3.status_online
   app.status = @pm3.status_launching
-  let task = group.spawn(no_wait=true, () => supervise(group, state, app.pm_id))
+  let task = group.spawn(
+    no_wait=true,
+    () => guarded("supervisor for \{app.name}", () => supervise(group, state, app.pm_id)),
+  )
   managed.task = Some(task)
 }
 

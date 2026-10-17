@@ -30,6 +30,8 @@ pub fn pm3_pagesize() -> Int
 
 pub fn pm3_pid_alive(Int) -> Int
 
+pub fn pm3_reopen_stderr(Bytes) -> Unit
+
 pub fn pm3_set_process_title(Bytes) -> Unit
 
 pub fn pm3_setsid() -> Int
@@ -97,7 +99,7 @@ pub fn DaemonState::new(@pm3.LogrotateConfig, @pm3.ConfigSource) -> Self
 pub fn DaemonState::ordered(Self) -> Array[Managed]
 pub fn DaemonState::remove(Self, Int) -> Unit
 pub async fn DaemonState::save(Self) -> Unit
-pub async fn DaemonState::sink_for(Self, String) -> LogSink
+pub async fn DaemonState::sink_for(Self, String, redirect_stderr? : Bool) -> LogSink
 
 pub struct LogSink {
   path : String
@@ -109,12 +111,19 @@ pub struct LogSink {
   mut rotate_requested : Bool
   mut tz_offset : Int
   mut last_prune_ms : Int64
+  mut rotations_since_prune : Int
+  redirect_stderr : Bool
   mut closed : Bool
+  mut needs_open : Bool
+  mut dropped_bytes : Int64
+  mut last_error_ms : Int64
 }
 pub async fn LogSink::close(Self) -> Unit
 pub async fn LogSink::flush(Self) -> Unit
 pub async fn LogSink::maybe_rotate(Self) -> Unit
-pub async fn LogSink::open(String, @pm3.LogrotateConfig, @aqueue.Queue[String]) -> Self
+pub async fn LogSink::note_rotation_failure(Self, String) -> Unit
+pub async fn LogSink::note_write_failure(Self, Int, String) -> Unit
+pub async fn LogSink::open(String, @pm3.LogrotateConfig, @aqueue.Queue[String], Bool) -> Self
 pub async fn LogSink::prune(Self, Int64) -> Unit
 pub fn LogSink::request_rotate(Self) -> Unit
 pub async fn LogSink::write(Self, Bytes) -> Unit

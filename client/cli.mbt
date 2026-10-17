@@ -800,46 +800,98 @@ fn last_newline(bytes : Bytes) -> Int? {
 /// Follow one log file, printing every line appended after this call under
 /// the same prefix the tail used. Lines are assembled from whole reads, so a
 /// line split across two read chunks is printed once.
+///
+/// The follower holds one open handle across passes: on POSIX a handle keeps
+/// referring to the *inode*, so after a rotation it can still read the tail
+/// the writer put into the renamed file before switching to the fresh one.
+/// Reopening the path each pass would skip those lines — the new file starts
+/// near empty — so the handle is what makes following gapless across
+/// rotations. A truncation (`pm3 flush`) cannot be recovered that way; the
+/// follower resumes from the top of the emptied file.
 async fn follow_log_file(
   file : LogFile,
   width : Int,
   raw : Bool,
   timestamp : String?,
 ) -> Unit {
+  // Bytes up to here were printed by the preceding tail; later opens follow a
+  // fresh file from the top.
   let mut offset = @fs.file_size(file.path) catch { _ => 0L }
+  let mut skip_existing = true
+  let mut handle : @fs.File? = None
   let mut rest : Bytes = b""
   while true {
     @async.sleep(400)
-    let size = @fs.file_size(file.path) catch { _ => continue }
-    if size < offset {
-      // Rotated or truncated: start over from the top of the new file.
-      offset = 0L
-      rest = b""
-    }
-    if size > offset {
-      let handle = @fs.open(
-        file.path,
-        mode=@fs.ReadOnly,
-        create_mode=@fs.OpenExisting,
-      ) catch {
-        _ => continue
+    let h = match handle {
+      Some(h) => h
+      None => {
+        let opened = @fs.open(
+          file.path,
+          mode=@fs.ReadOnly,
+          create_mode=@fs.OpenExisting,
+        ) catch {
+          _ => continue
+        }
+        // A reopen means the old file was rotated or truncated: read the new
+        // file from its start.
+        if !skip_existing {
+          offset = 0L
+        }
+        skip_existing = false
+        handle = Some(opened)
+        opened
       }
-      let want = (size - offset).to_int()
+    }
+    // Drain everything this handle can see. After a rotation that includes
+    // the renamed file's last lines.
+    while true {
+      let fd_size = h.size()
+      if offset >= fd_size {
+        break
+      }
+      let remaining = fd_size - offset
+      let want = (if remaining > 65536L { 65536L } else { remaining }).to_int()
       let buf = FixedArray::make(want, b'\x00')
-      let got = handle.read_at(buf, position=offset) catch { _ => 0 }
-      handle.close()
-      if got > 0 {
-        offset = offset + got.to_int64()
-        let chunk = rest + buf.unsafe_reinterpret_as_bytes()[:got].to_owned()
-        match last_newline(chunk) {
-          None => rest = chunk
-          Some(index) => {
-            let complete = chunk[:index + 1].to_owned()
-            rest = chunk[index + 1:].to_owned()
-            stream_lines(file, complete, width, raw, timestamp)
-          }
+      let got = h.read_at(buf, position=offset) catch { _ => 0 }
+      if got <= 0 {
+        break
+      }
+      offset = offset + got.to_int64()
+      let chunk = rest + buf.unsafe_reinterpret_as_bytes()[:got].to_owned()
+      match last_newline(chunk) {
+        None => rest = chunk
+        Some(index) => {
+          let complete = chunk[:index + 1].to_owned()
+          rest = chunk[index + 1:].to_owned()
+          stream_lines(file, complete, width, raw, timestamp)
         }
       }
+    }
+    let fd_size = h.size()
+    // The path naming a different size (or a different modification time for
+    // the same size) means the path now refers to another file: a rotation.
+    let path_size = @fs.file_size(file.path) catch {
+      _ => continue
+    }
+    let rotated = if fd_size != path_size {
+      true
+    } else {
+      let fd_mtime = h.mtime()
+      let path_mtime = @fs.mtime(file.path) catch {
+        _ => continue
+      }
+      fd_mtime.0 != path_mtime.0 || fd_mtime.1 != path_mtime.1
+    }
+    if fd_size < offset {
+      // Emptied in place: the unread tail is gone; start over from the top.
+      h.close()
+      handle = None
+      rest = b""
+    } else if rotated {
+      // Rotated: keep `rest` — a line cut in half by the rotation continues
+      // in the fresh file.
+      h.close()
+      handle = None
     }
   }
 }

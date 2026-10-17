@@ -82,14 +82,19 @@ pub fn DaemonState::ordered(self : DaemonState) -> Array[Managed] {
 
 ///|
 /// The shared log sink for `path`, opening it on first use.
+///
+/// `redirect_stderr` is set for the daemon's own log: the daemon writes it
+/// through the inherited stderr, so a rotation must move that descriptor to
+/// the fresh file.
 pub async fn DaemonState::sink_for(
   self : DaemonState,
   path : String,
+  redirect_stderr? : Bool = false,
 ) -> LogSink {
   match self.sinks.get(path) {
     Some(sink) => sink
     None => {
-      let sink = LogSink::open(path, self.config, self.compress_queue)
+      let sink = LogSink::open(path, self.config, self.compress_queue, redirect_stderr)
       self.sinks.set(path, sink)
       sink
     }

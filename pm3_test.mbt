@@ -129,6 +129,31 @@ test "parse_rotated_stamp is exact" {
 }
 
 ///|
+/// The daemon's own log joins the rotation scheme with its own base name, so
+/// the same sizing and retention rules cover `pm3.log`.
+test "daemon log rotates under the same naming" {
+  let path = @pm3.pm3_daemon_log_path()
+  assert_eq(
+    @pm3.rotated_path(path, "2026-01-01_00-00-00", false),
+    @pm3.path_join(@pm3.pm3_home(), "pm3__2026-01-01_00-00-00.log"),
+  )
+  assert_eq(
+    @pm3.rotated_path(path, "2026-01-01_00-00-00", true),
+    @pm3.path_join(@pm3.pm3_home(), "pm3__2026-01-01_00-00-00.log.gz"),
+  )
+  assert_eq(
+    @pm3.parse_rotated_stamp(path, "pm3__2026-01-01_00-00-00.log"),
+    Some("2026-01-01_00-00-00"),
+  )
+  assert_eq(@pm3.parse_rotated_stamp(path, "pm3.log"), None)
+  assert_eq(@pm3.parse_rotated_stamp(path, "pm3-other.log"), None)
+  assert_true(@pm3.is_daemon_log_path(path))
+  assert_false(
+    @pm3.is_daemon_log_path(@pm3.path_join(@pm3.pm3_log_dir(), "web-out.log")),
+  )
+}
+
+///|
 test "rotation_due respects limits" {
   let config = @pm3.default_logrotate_config()
   ignore(config.set_field("max_size", "1K"))
@@ -143,8 +168,8 @@ test "rotation_due respects limits" {
 
 ///|
 test "select_for_deletion keeps newest and prunes by age" {
-  let now = 1_000_000_000L
-  let day = 86400L
+  let now = 1_000_000_000L * 1_000_000_000L
+  let day = 86400L * 1_000_000_000L
   let files : Array[@pm3.RotatedFile] = [
     { name: "a", mtime: now - 3L * day, },
     { name: "b", mtime: now - 1L * day, },
@@ -154,6 +179,22 @@ test "select_for_deletion keeps newest and prunes by age" {
   assert_eq(@pm3.select_for_deletion(files, 2, 0, now), ["a"])
   // Age cap of one day also removes the three-day-old file.
   assert_eq(@pm3.select_for_deletion(files, 3, 2, now), ["a"])
+}
+
+///|
+/// Sub-second modification times must order newer files first. Whole-second
+/// precision used to collapse a whole burst of rotations onto one timestamp,
+/// letting retention delete the newest file of the burst.
+test "select_for_deletion orders by sub-second mtime" {
+  let base = 1_000_000_000L * 1_000_000_000L
+  let files : Array[@pm3.RotatedFile] = [
+    { name: "oldest", mtime: base + 1_000_000L },
+    { name: "newest", mtime: base + 9_000_000L },
+    { name: "middle", mtime: base + 5_000_000L },
+  ]
+  assert_eq(@pm3.select_for_deletion(files, 1, 0, base + 9_000_000L), [
+    "middle", "oldest",
+  ])
 }
 
 ///|

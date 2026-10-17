@@ -209,3 +209,12 @@ pub fn pm3_pid_path() -> String {
 pub fn pm3_daemon_log_path() -> String {
   path_join(pm3_home(), "pm3.log")
 }
+
+///|
+/// Whether `path` is the daemon's own log. It rotates under the same policy
+/// as application logs — `pm2-logrotate` rotates `pm2.log` the same way — but
+/// `reloadLogs` and the cron trigger deliberately leave it alone, again
+/// matching `pm2-logrotate`, and `flush` truncates it like PM2 does.
+pub fn is_daemon_log_path(path : String) -> Bool {
+  path == pm3_daemon_log_path()
+}

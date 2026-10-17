@@ -209,7 +209,11 @@ pub async fn run_logrotate_loop(state : DaemonState) -> Unit {
     }
     if next_forced > 0L && now >= next_forced {
       for _, sink in state.sinks {
-        sink.request_rotate()
+        // `pm2-logrotate`'s cron rotates application logs; size rotation
+        // covers `pm2.log`, so the daemon's own log sits this one out.
+        if !@pm3.is_daemon_log_path(sink.path) {
+          sink.request_rotate()
+        }
       }
       next_forced = match @pm3.parse_cron(expr) {
         Some(spec) =>
@@ -231,8 +235,19 @@ pub async fn run_logrotate_loop(state : DaemonState) -> Unit {
     elapsed = 0
     for _, sink in state.sinks {
       sink.tz_offset = offset
-      sink.maybe_rotate()
-      sink.prune(now)
+      // A sink the daemon cannot rotate or prune (a full disk, a permission
+      // problem) must not take this loop — and with it every other app's
+      // rotation and retention — down.
+      try {
+        sink.maybe_rotate()
+      } catch {
+        e => sink.note_rotation_failure("\{e}")
+      }
+      try {
+        sink.prune(now * 1_000_000_000L)
+      } catch {
+        e => sink.note_rotation_failure("\{e}")
+      }
     }
   }
 }

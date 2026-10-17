@@ -131,6 +131,8 @@ pub fn is_app_config_file(String) -> Bool
 
 pub fn is_binary_content(Bytes) -> Bool
 
+pub fn is_daemon_log_path(String) -> Bool
+
 pub fn is_python_interpreter(String) -> Bool
 
 pub fn load_apps_from_file(String) -> Result[Array[App], String]

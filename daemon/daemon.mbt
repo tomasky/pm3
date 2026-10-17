@@ -498,7 +498,11 @@ async fn dispatch(
       }
     "reloadLogs" => {
       for _, sink in state.sinks {
-        sink.request_rotate()
+        // `pm2 reloadLogs` reopens application logs only; the daemon's own
+        // log is rotated by the size policy instead.
+        if !@pm3.is_daemon_log_path(sink.path) {
+          sink.request_rotate()
+        }
       }
       @pm3.Response::success("log rotation requested")
     }
@@ -600,9 +604,20 @@ async fn handle_connection(
   }
   let response = match @pm3.decode_request(text) {
     None => @pm3.Response::failure("malformed request")
-    Some(request) => dispatch(group, state, request)
+    Some(request) =>
+      // A failing request must answer with an error, not fail this task:
+      // an uncaught raise here used to fail the daemon's whole task group.
+      try {
+        dispatch(group, state, request)
+      } catch {
+        e => @pm3.Response::failure("internal error: \{e}")
+      }
   }
-  conn.write(@pm3.encode_response(response))
+  // The client may hang up before reading the answer; that is its business,
+  // not the daemon's.
+  conn.write(@pm3.encode_response(response)) catch {
+    _ => ()
+  }
 }
 
 ///|
@@ -614,7 +629,8 @@ async fn accept_loop(
 ) -> Unit {
   while state.running {
     let (conn, _) = server.accept()
-    group.spawn_bg(() => handle_connection(group, state, conn))
+    // One bad connection must not fail the group and take the daemon down.
+    group.spawn_bg(allow_failure=true, () => handle_connection(group, state, conn))
   }
 }
 
@@ -629,6 +645,26 @@ fn normalize_loaded_state(state : DaemonState) -> Unit {
     if app.is_online() {
       app.status = @pm3.status_stopped
       app.pid = 0
+    }
+  }
+}
+
+///|
+/// Run a daemon-wide worker loop. A failure — a full disk is the classic
+/// one — must neither fail the daemon's task group (which would cancel
+/// every other task in it) nor retire the worker for good, so report it and
+/// restart the worker after a short pause.
+async fn worker_loop(
+  state : DaemonState,
+  name : String,
+  body : async () -> Unit raise,
+) -> Unit {
+  while state.running {
+    body() catch {
+      e => daemon_log("\{name} loop failed: \{e}")
+    }
+    if state.running {
+      @async.sleep(1000)
     }
   }
 }
@@ -650,15 +686,23 @@ pub async fn run_daemon() -> Unit {
   let state = DaemonState::new(config, config_source)
   state.load()
   normalize_loaded_state(state)
+  // The daemon's own log rotates under the same policy as application logs —
+  // `pm2-logrotate` rotates `pm2.log` the same way — while `reloadLogs` and
+  // the cron trigger leave it alone, again matching `pm2-logrotate`.
+  ignore(
+    state.sink_for(@pm3.pm3_daemon_log_path(), redirect_stderr=true),
+  ) catch {
+    _ => ()
+  }
   @async.with_task_group(group => {
     let addr = @socket.Addr::parse("127.0.0.1:0") catch { _ => return }
     let server = @socket.TcpServer::TcpServer(addr, reuse_addr=true)
     state.port = server.addr.port()
     write_text_file(@pm3.pm3_port_path(), state.port.to_string())
     write_text_file(@pm3.pm3_pid_path(), pm3_getpid().to_string())
-    group.spawn_bg(() => run_logrotate_loop(state))
-    group.spawn_bg(() => run_compress_loop(state))
-    group.spawn_bg(() => run_monitor_loop(group, state))
+    group.spawn_bg(() => worker_loop(state, "log rotation", () => run_logrotate_loop(state)))
+    group.spawn_bg(() => worker_loop(state, "log compression", () => run_compress_loop(state)))
+    group.spawn_bg(() => worker_loop(state, "process monitoring", () => run_monitor_loop(group, state)))
     group.spawn_bg(() => accept_loop(group, state, server))
     // The accept loop flips `running` when `pm3 kill` arrives.
     while state.running {

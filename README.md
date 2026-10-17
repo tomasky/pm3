@@ -520,8 +520,11 @@ which happily matches unrelated files, and it assumes every log ends in `.log`.
   live file. That is **O(1)**, **atomic** on POSIX, loses nothing (the writer
   immediately switches to the new descriptor), and never produces holes.
 - Rotated files are matched by an **exact prefix/suffix** test
-  (`<base>__<stamp>.log[.gz]`), so `api-out__backup.log` or a file that merely
-  contains the base name is never mistaken for a rotated log.
+  (`<base>__<stamp>.log[.gz]`), so `api-out-backup.log` or a file that merely
+  contains the base name is never mistaken for a rotated log. (A file
+  deliberately named `<base>__<something>.log` does match the pattern — the
+  stamp is not required to be a date — so keep unrelated files out of the log
+  directory.)
 - Gzip runs on a **background worker** with a configurable level, instead of
   blocking the rotation path.
 - Retention is computed from **modification times**, and can additionally cap
@@ -529,6 +532,10 @@ which happily matches unrelated files, and it assumes every log ends in `.log`.
 - An optional `min_size` prevents rotating near-empty logs.
 - If two rotations happen within the same timestamp tick, the second one gets a
   `-1`, `-2`, … suffix instead of overwriting its sibling.
+- The daemon's own `pm3.log` rotates under the same policy, as
+  `pm2-logrotate` rotates `pm2.log`. Matching PM2's split: the size rule
+  applies to it, the cron trigger and `reloadLogs` apply to application logs
+  only, and `pm3 flush` truncates it alongside them.
 
 ### Policy
 
