@@ -36,6 +36,9 @@ test "app_records_from_json backfills fields an older daemon did not write" {
   // Fields that grew later than v0.1.2 are backfilled with their defaults.
   assert_eq(app.app_namespace, "default")
   assert_eq(app.version, "N/A")
+  // The pid identity did not exist yet either: `resurrect` then refuses to
+  // signal the pid rather than trusting it.
+  assert_eq(app.pid_start, 0L)
 }
 
 ///|

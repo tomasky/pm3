@@ -133,6 +133,8 @@ pub fn is_binary_content(Bytes) -> Bool
 
 pub fn is_daemon_log_path(String) -> Bool
 
+pub fn is_discard_log_path(String) -> Bool
+
 pub fn is_python_interpreter(String) -> Bool
 
 pub fn load_apps_from_file(String) -> Result[Array[App], String]
@@ -215,6 +217,8 @@ pub fn rotated_path(String, String, Bool) -> String
 
 pub fn rotation_due(Int64, LogrotateConfig) -> Bool
 
+pub fn runtime_of(String) -> String?
+
 pub fn save_logrotate_config(LogrotateConfig, ConfigSource) -> Result[Unit, String]
 
 pub fn script_extension(String) -> String
@@ -259,6 +263,8 @@ pub fn style_yellow(String) -> String
 
 pub fn truncate_text(String, Int) -> String
 
+pub fn type_strip_support(String) -> TsSupport
+
 pub fn visible_width(String) -> Int
 
 pub fn weekday_from_days(Int) -> Int
@@ -299,6 +305,7 @@ pub(all) struct App {
   mut username : String
   mut desired_state : String
   mut pid : Int
+  mut pid_start : Int64
   mut restarts : Int
   mut unstable_restarts : Int
   mut created_at : Int64
@@ -313,6 +320,7 @@ pub(all) struct App {
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn App::command_display(Self) -> String
 pub fn App::command_line(Self) -> (String, Array[String])
+pub fn App::display_pid(Self) -> Int
 pub fn App::equal(Self, Self) -> Bool
 pub fn App::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn App::is_online(Self) -> Bool
@@ -412,6 +420,15 @@ pub(all) struct RotatedFile {
 pub fn RotatedFile::equal(Self, Self) -> Bool
 pub fn RotatedFile::not_equal(Self, Self) -> Bool
 pub fn RotatedFile::to_repr(Self) -> @debug.Repr
+
+pub(all) enum TsSupport {
+  Native
+  Flag
+  Unsupported
+} derive(Eq, @debug.Debug)
+pub fn TsSupport::equal(Self, Self) -> Bool
+pub fn TsSupport::not_equal(Self, Self) -> Bool
+pub fn TsSupport::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

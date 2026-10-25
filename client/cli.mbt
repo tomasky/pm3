@@ -157,7 +157,7 @@ async fn cmd_list(args : Array[String]) -> Unit {
       app.app_namespace,
       if app.version.length() > 0 { app.version } else { "N/A" },
       @pm3.bold_inverse("fork"),
-      app.pid.to_string(),
+      app.display_pid().to_string(),
       uptime,
       app.restarts.to_string(),
       style_status(status),
@@ -211,7 +211,7 @@ async fn cmd_describe(args : Array[String]) -> Unit {
       ("pm_id", app.pm_id.to_string()),
       ("name", app.name),
       ("status", style_status(app.status)),
-      ("pid", app.pid.to_string()),
+      ("pid", app.display_pid().to_string()),
       ("command", app.command_display()),
       (
         "interpreter",

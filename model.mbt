@@ -75,6 +75,13 @@ pub(all) struct App {
   /// What the user asked for: `online` or `stopped`.
   mut desired_state : String
   mut pid : Int
+  /// The kernel's `starttime` for `pid` (clock ticks since boot, `/proc/<pid>/stat`
+  /// field 22), recorded when the process was started. A pid alone does not
+  /// name a process — the kernel recycles them — so this is what lets
+  /// `resurrect` tell its own orphan from a stranger that inherited the pid,
+  /// which is the bug PM2's stale `_tree_pids` caused. `0` means "unknown",
+  /// and an unknown pid is never signalled.
+  mut pid_start : Int64
   mut restarts : Int
   mut unstable_restarts : Int
   mut created_at : Int64
@@ -187,6 +194,7 @@ pub fn App::new(name : String, script : String, args : Array[String]) -> App {
     username: current_username(),
     desired_state: status_stopped,
     pid: 0,
+    pid_start: 0L,
     restarts: 0,
     unstable_restarts: 0,
     created_at: now,
@@ -236,6 +244,20 @@ pub fn App::is_online(self : App) -> Bool {
 }
 
 ///|
+/// The pid to show in `list` and `describe`: `0` unless the app is online.
+///
+/// A record loaded from `dump.json` keeps the last pid it ran with, because
+/// `pm3 resurrect` needs it to clear an orphan left by a hard daemon death;
+/// that pid must not be presented as if the process were still running.
+pub fn App::display_pid(self : App) -> Int {
+  if self.is_online() {
+    self.pid
+  } else {
+    0
+  }
+}
+
+///|
 /// Whether a `pm3 stop` was requested.
 pub fn App::wants_stop(self : App) -> Bool {
   self.desired_state == status_stopped
@@ -257,6 +279,7 @@ pub fn App::mark_started(self : App, pid : Int) -> Unit {
 /// running, and the last sample of a dead process is not memory it holds.
 pub fn App::mark_exited(self : App, code : Int) -> Unit {
   self.pid = 0
+  self.pid_start = 0L
   self.memory = 0L
   self.cpu = 0.0
   self.exit_code = code

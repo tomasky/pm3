@@ -211,6 +211,20 @@ pub fn pm3_daemon_log_path() -> String {
 }
 
 ///|
+/// Whether `path` is a log destination that must never be opened, rotated or
+/// truncated: the null device (in any case) and the empty path.
+///
+/// `pm3 start --out-file /dev/null` is a legitimate way to silence one
+/// stream, and PM2's logger skips `NULL` and `/dev/null` paths outright. A
+/// rotation is a rename plus a reopen, so rotating the null device would
+/// rename it to `null__<stamp>.log` and leave a regular file where the device
+/// was — under root on devtmpfs, that rename succeeds.
+pub fn is_discard_log_path(path : String) -> Bool {
+  let trimmed = path.trim()
+  trimmed.length() == 0 || trimmed.to_lower() == "/dev/null"
+}
+
+///|
 /// Whether `path` is the daemon's own log. It rotates under the same policy
 /// as application logs — `pm2-logrotate` rotates `pm2.log` the same way — but
 /// `reloadLogs` and the cron trigger deliberately leave it alone, again

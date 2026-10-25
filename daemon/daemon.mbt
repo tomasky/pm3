@@ -527,14 +527,27 @@ async fn dispatch(
             Ok(_) => ()
           }
           // Clear an orphan left behind by a hard daemon death so we do not
-          // end up with two copies of the same service.
-          if app.pid > 0 && pid_alive(app.pid) {
-            send_signal(app.pid, sig_term)
-            @async.sleep(200)
-            if pid_alive(app.pid) {
-              send_signal(app.pid, sig_kill)
+          // end up with two copies of the same service. The recorded pid is
+          // only signalled while its `starttime` still matches: after a
+          // reboot, or once the kernel recycled the number, it names a
+          // stranger — PM2's stale `_tree_pids` SIGKILLed unrelated processes
+          // for exactly this reason (7.0.0-7.0.4). A record that predates the
+          // start time carries no identity, so it is left alone too.
+          if app.pid > 0 {
+            if pid_is(app.pid, app.pid_start) {
+              ignore(kill_tree(app.pid, sig_term))
+              @async.sleep(200)
+              if pid_is(app.pid, app.pid_start) {
+                ignore(kill_tree(app.pid, sig_kill))
+              }
+            } else {
+              daemon_log(
+                "not clearing pid \{app.pid} of \{app.name}: it is no longer the process pm3 started",
+              )
             }
           }
+          app.pid = 0
+          app.pid_start = 0L
           start_managed(group, state, managed)
           started = started + 1
         }
@@ -642,10 +655,17 @@ async fn accept_loop(
 fn normalize_loaded_state(state : DaemonState) -> Unit {
   for _, managed in state.ordered() {
     let app = managed.app
+    // The pid is kept: it is what `resurrect` needs to clear an orphan left by
+    // a hard daemon death, and it is only ever signalled together with the
+    // `starttime` recorded next to it. `pm3 list` hides it while the process is
+    // not running (`App::display_pid`).
     if app.is_online() {
       app.status = @pm3.status_stopped
-      app.pid = 0
     }
+    // The resource samples describe a process that is not running any more;
+    // PM2 strips the same daemon bookkeeping when it reloads a dump.
+    app.memory = 0L
+    app.cpu = 0.0
   }
 }
 

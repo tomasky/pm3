@@ -108,3 +108,170 @@ pub fn is_binary_content(bytes : Bytes) -> Bool {
 pub fn is_python_interpreter(interpreter : String) -> Bool {
   interpreter.contains("python")
 }
+
+///|
+/// The JS runtime behind an interpreter path or command.
+///
+/// This is PM2's `lib/tools/interpreter.js` rule, which 7.1.0 grew so that a
+/// host is not mistaken for a host with no JavaScript just because its binary
+/// is named differently. Only the last path segment counts, Windows
+/// executable extensions and a trailing version tag are stripped, and the
+/// match is anchored on the end of the name:
+///
+/// - `node`, `/usr/bin/node`, `nodejs`, `node.exe`, `node64.exe`, `node@18`,
+///   `node18`, `node-v20.1.0`, `C:\nvm\v18.0.0\node.exe` are `node`;
+/// - `bun`, `/home/ubuntu/.bun/bin/bun`, `bun.exe`, `bun-1.1` are `bun`;
+/// - `bundle`, `bunx`, `/home/ubuntu/.venvs/bin/python` are neither (#5990).
+pub fn runtime_of(interpreter : String) -> String? {
+  let mut name = runtime_basename(interpreter).to_lower()
+  for ext in [".exe", ".cmd", ".bat"] {
+    match name.view().strip_suffix(ext) {
+      Some(view) => name = view.to_owned()
+      None => ()
+    }
+  }
+  name = strip_version_tag(name)
+  if name == "nodejs" || name.view().has_suffix("node") {
+    Some("node")
+  } else if name.view().has_suffix("bun") {
+    Some("bun")
+  } else {
+    None
+  }
+}
+
+///|
+/// The last segment of a path, accepting both separators so a Windows path
+/// classifies on any host (PM2 splits on `[\\/]`).
+fn runtime_basename(path : String) -> String {
+  let mut start = 0
+  for i in 0..<path.length() {
+    match path.get_char(i) {
+      Some(ch) if ch == '/' || ch == '\\' => start = i + 1
+      _ => ()
+    }
+  }
+  path.view(start_offset=start, end_offset=path.length()).to_owned()
+}
+
+///|
+/// Drop a trailing version tag: PM2's `[-@_.]?v?\d+(\.\d+)*$`.
+///
+/// `node18` and `node@18` lose the number and its separator, `node-v20.1.0`
+/// loses `-v20.1.0`. A name that does not end in a digit is returned as is,
+/// so `node.` is not mistaken for a versioned `node`.
+fn strip_version_tag(name : String) -> String {
+  let mut index = name.length()
+  while index > 0 {
+    let ch = match name.get_char(index - 1) {
+      Some(ch) => ch
+      None => break
+    }
+    if (ch >= '0' && ch <= '9') || ch == '.' {
+      index = index - 1
+    } else {
+      break
+    }
+  }
+  if index == name.length() {
+    return name
+  }
+  let last = match name.get_char(name.length() - 1) {
+    Some(ch) => ch
+    None => return name
+  }
+  if last < '0' || last > '9' {
+    return name
+  }
+  let mut start = index
+  if start > 0 {
+    match name.get_char(start - 1) {
+      Some(ch) if ch == 'v' || ch == 'V' => start = start - 1
+      _ => ()
+    }
+  }
+  if start > 0 {
+    match name.get_char(start - 1) {
+      Some(ch) if ch == '-' || ch == '@' || ch == '_' || ch == '.' =>
+        start = start - 1
+      _ => ()
+    }
+  }
+  name.view(start_offset=0, end_offset=start).to_owned()
+}
+
+///|
+/// Whether a node binary can run a `.ts` file, and under which conditions.
+pub(all) enum TsSupport {
+  /// Type stripping is on by default: no flag needed.
+  Native
+  /// Type stripping exists but has to be asked for.
+  Flag
+  /// This node cannot run TypeScript at all.
+  Unsupported
+} derive(Eq, Debug)
+
+pub extend TsSupport with Eq::{not_equal, equal}
+
+pub extend TsSupport with Debug::{to_repr}
+
+///|
+/// What a node version can do with `.ts` files, the way PM2's
+/// `lib/tools/typestrip.js` classifies it:
+///
+/// - `native` from 22.18.0 in the 22 line, and from 23.6.0;
+/// - `flag` (`--experimental-strip-types`) from 22.6.0;
+/// - `none` before that, and for anything that is not a version at all.
+pub fn type_strip_support(version : String) -> TsSupport {
+  let (major, minor) = match parse_node_version(version) {
+    Some(parsed) => parsed
+    None => return Unsupported
+  }
+  if major >= 24 {
+    Native
+  } else if major == 23 {
+    if minor >= 6 {
+      Native
+    } else {
+      Flag
+    }
+  } else if major == 22 {
+    if minor >= 18 {
+      Native
+    } else if minor >= 6 {
+      Flag
+    } else {
+      Unsupported
+    }
+  } else {
+    Unsupported
+  }
+}
+
+///|
+/// `(major, minor)` of a `node --version` answer such as `v22.18.0` or
+/// `v23.6.0-rc.1`. A `v` prefix is optional.
+fn parse_node_version(version : String) -> (Int, Int)? {
+  let text = version.trim().to_owned()
+  let digits = if text.has_prefix("v") || text.has_prefix("V") {
+    text.view(start_offset=1, end_offset=text.length())
+  } else {
+    text.view()
+  }
+  let parts : Array[String] = []
+  for part in digits.split(".") {
+    parts.push(part.to_owned())
+  }
+  if parts.length() < 2 {
+    return None
+  }
+  let major = match parse_non_negative_int(parts[0].view()) {
+    Some(value) => value
+    None => return None
+  }
+  let minor = match parse_non_negative_int(parts[1].view()) {
+    Some(value) => value
+    None => return None
+  }
+  Some((major, minor))
+}

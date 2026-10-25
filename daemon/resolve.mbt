@@ -115,33 +115,175 @@ async fn read_head(path : String, max : Int) -> Bytes? {
 }
 
 ///|
+/// The canonical names a JS runtime answers to on `PATH`. Debian ships node
+/// as `nodejs`, and only that package provides it.
+fn runtime_names(runtime : String) -> Array[String] {
+  if runtime == "node" {
+    ["node", "nodejs"]
+  } else {
+    [runtime]
+  }
+}
+
+///|
+/// Resolve a JS runtime, the way PM2's interpreter detection does: the
+/// canonical names first, then a scan of `PATH` for an anchored runtime name.
+///
+/// PM2 7.1.0 taught its detection `node.exe`, `node64.exe`, `nodejs`,
+/// `node18`, `node@18` and `bun.exe`: a host that installs node as `nodejs`,
+/// or a version manager that exposes `node18`, otherwise looks like a host
+/// with no JavaScript at all. The anchored match (`interpreter.js` #5990)
+/// keeps `bundle` and `bunx` out.
+pub async fn which_runtime(runtime : String) -> String? {
+  for name in runtime_names(runtime) {
+    match which(name) {
+      Some(path) => return Some(path)
+      None => ()
+    }
+  }
+  let path = match @env.get_env_var("PATH") {
+    Some(value) => value
+    None => return None
+  }
+  for dir in path.split(":") {
+    if dir.length() == 0 {
+      continue
+    }
+    let names = @fs.readdir(dir) catch {
+      _ => continue
+    }
+    for name in names {
+      match @pm3.runtime_of(name) {
+        Some(kind) if kind == runtime => {
+          let candidate = @pm3.path_join(dir.to_owned(), name)
+          if is_executable_file(candidate) {
+            return Some(candidate)
+          }
+        }
+        _ => ()
+      }
+    }
+  }
+  None
+}
+
+///|
+/// The command to record for `runtime`: its canonical name when that is on
+/// `PATH`, otherwise the path of the binary that stands in for it. Recording
+/// the name keeps a dump readable and lets a later start resolve `node` to
+/// whatever this host installs; recording the path is what makes a version
+/// manager's `node18` work at all.
+async fn runtime_command(runtime : String) -> String? {
+  if which(runtime) is Some(_) {
+    return Some(runtime)
+  }
+  which_runtime(runtime)
+}
+
+///|
+/// Keep `interpreter` when it resolves, otherwise the variant that stands in
+/// for it: `node` on a host whose binary is only called `nodejs`.
+async fn resolve_runtime(
+  interpreter : String,
+  runtime : String,
+) -> Result[String, String] {
+  if which(interpreter) is Some(_) {
+    return Ok(interpreter)
+  }
+  match runtime_command(runtime) {
+    Some(found) => Ok(found)
+    None => Err(interpreter_unavailable(interpreter))
+  }
+}
+
+///|
+/// The version a node binary reports (`v22.18.0`). Empty when it cannot be
+/// asked, which makes it unable to run TypeScript.
+async fn node_version(node : String) -> String {
+  let result = @process.collect_stdout(node, ["--version"]) catch {
+    _ => return ""
+  }
+  let (_, data) = result
+  let text = data.text() catch {
+    _ => return ""
+  }
+  text.trim().to_owned()
+}
+
+///|
+/// PM2's message for a `.ts` file no installed runtime can run.
+fn typescript_unavailable() -> String {
+  "TypeScript apps require bun, Node.js >= 22.18 (native type stripping) or a custom interpreter (e.g. --interpreter ts-node)"
+}
+
+///|
+/// The interpreter for a `.ts` file, in PM2's order: bun when it is
+/// installed, then node's type stripping when the node on `PATH` is new
+/// enough — native since 22.18, behind `--experimental-strip-types` since
+/// 22.6, an error before that (7.0.4). `.tsx` is deliberately not eligible:
+/// node strips types but does not transform JSX.
+async fn typescript_interpreter() -> Result[(String, Array[String]), String] {
+  match runtime_command("bun") {
+    Some(bun) => return Ok((bun, []))
+    None => ()
+  }
+  let node = match runtime_command("node") {
+    Some(node) => node
+    None => return Err(typescript_unavailable())
+  }
+  // `node` here is the resolved command, which is the plain name on a normal
+  // host and the path of a `nodejs`/`node18` binary when that is all there is.
+  match @pm3.type_strip_support(node_version(node)) {
+    @pm3.TsSupport::Native => Ok((node, []))
+    @pm3.TsSupport::Flag => Ok((node, ["--experimental-strip-types"]))
+    @pm3.TsSupport::Unsupported => Err(typescript_unavailable())
+  }
+}
+
+///|
 /// PM2's default interpreter for a script pm3 found on disk: the extension
-/// map first, then `none` for a real binary, then `node`.
-async fn default_interpreter(path : String) -> Result[String, String] {
-  match @pm3.interpreter_for_extension(@pm3.script_extension(path)) {
+/// map first, then `none` for a real binary, then `node`. The interpreter
+/// arguments it needs (only type stripping, today) ride along.
+async fn default_interpreter(
+  path : String,
+) -> Result[(String, Array[String]), String] {
+  let extension = @pm3.script_extension(path)
+  if extension == ".ts" {
+    return typescript_interpreter()
+  }
+  match @pm3.interpreter_for_extension(extension) {
     Some("python") => {
       // PM2 prefers `python` and survives on a `python3`-only system.
       let python = which("python")
       if python is Some(_) {
-        return Ok("python")
+        return Ok(("python", []))
       }
       let python3 = which("python3")
       if python3 is Some(_) {
-        return Ok("python3")
+        return Ok(("python3", []))
       }
       Err(interpreter_unavailable("python"))
     }
-    Some(interpreter) => Ok(interpreter)
+    Some(interpreter) =>
+      // `.js` maps to `node`, which a host may install as `nodejs`.
+      match @pm3.runtime_of(interpreter) {
+        Some(runtime) =>
+          match resolve_runtime(interpreter, runtime) {
+            Ok(found) => Ok((found, []))
+            Err(message) => Err(message)
+          }
+        None => Ok((interpreter, []))
+      }
     None => {
       match read_head(path, 512) {
-        Some(bytes) if @pm3.is_binary_content(bytes) => return Ok("none")
+        Some(bytes) if @pm3.is_binary_content(bytes) => return Ok(("none", []))
         _ => ()
       }
       // Everything else is JavaScript to PM2; pm3 does the same, so
       // `pm3 start app.js` works for a file with no shebang, which is the
       // behaviour a PM2 user expects.
-      match which("node") {
-        Some(node) => Ok(node)
+      match runtime_command("node") {
+        Some(node) => Ok((node, []))
         None => Err(interpreter_unavailable("node"))
       }
     }
@@ -169,11 +311,34 @@ pub async fn resolve_start_spec(app : @pm3.App) -> Result[Unit, String] {
       None => return Err(missing_script_message(app))
       Some(path) =>
         match default_interpreter(path) {
-          Ok(chosen) => interpreter = chosen
+          Ok((chosen, extra_args)) => {
+            interpreter = chosen
+            // PM2 appends `--experimental-strip-types` to `node_args` and
+            // never twice.
+            for arg in extra_args {
+              if !app.interpreter_args.contains(arg) {
+                app.interpreter_args.push(arg)
+              }
+            }
+          }
           Err(message) => return Err(message)
         }
     }
     app.interpreter = interpreter
+  } else if interpreter != "none" {
+    // A pinned interpreter that names a runtime may exist under a different
+    // binary name: `--interpreter node` on a host that only has `nodejs`.
+    match @pm3.runtime_of(interpreter) {
+      Some(runtime) =>
+        match resolve_runtime(interpreter, runtime) {
+          Ok(found) => {
+            interpreter = found
+            app.interpreter = found
+          }
+          Err(message) => return Err(message)
+        }
+      None => ()
+    }
   }
   if interpreter != "none" {
     let found = which(interpreter)

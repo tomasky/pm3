@@ -669,10 +669,75 @@ test "mark_exited clears the resource samples" {
   app.pid = 4242
   app.memory = 10L * 1024L * 1024L
   app.cpu = 12.5
+  app.pid_start = 1234567L
   app.mark_exited(3)
   assert_eq(app.pid, 0)
+  // The pid's identity goes with it: a dead process must never be signalled
+  // through a number the kernel may hand to someone else.
+  assert_eq(app.pid_start, 0L)
   assert_eq(app.memory, 0L)
   assert_eq(app.cpu, 0.0)
   assert_eq(app.exit_code, 3)
   assert_eq(app.status, "errored")
+}
+
+///|
+/// `list` and `describe` show the pid of a running process only. A record
+/// loaded from a dump keeps its last pid for `resurrect` to clear an orphan,
+/// but presenting it as live would be a lie.
+test "display_pid hides the pid of a stopped app" {
+  let app = @pm3.App::new("worker", "/srv/worker.js", [])
+  app.pid = 4242
+  app.pid_start = 99L
+  app.status = @pm3.status_stopped
+  assert_eq(app.display_pid(), 0)
+  app.status = @pm3.status_online
+  assert_eq(app.display_pid(), 4242)
+}
+
+///|
+/// PM2's runtime detection (`lib/tools/interpreter.js`): only the last path
+/// segment, an optional Windows extension and an optional trailing version
+/// are looked at, and the match is anchored on the end of the name.
+test "runtime_of recognises node and bun under all their names" {
+  for name in [
+    "node", "/usr/bin/node", "nodejs", "node.exe", "node64.exe", "node@18",
+    "node18", "node-v20.1.0", "C:\\nvm\\v18.0.0\\node.exe",
+  ] {
+    assert_eq(@pm3.runtime_of(name), Some("node"))
+  }
+  for name in ["bun", "/home/ubuntu/.bun/bin/bun", "bun.exe", "bun-1.1"] {
+    assert_eq(@pm3.runtime_of(name), Some("bun"))
+  }
+  // The letters alone do not make a runtime (#5990).
+  for name in ["bundle", "bunx", "/home/ubuntu/.venvs/bin/python", "python", ""] {
+    assert_eq(@pm3.runtime_of(name), None)
+  }
+}
+
+///|
+/// Type stripping, on PM2's schedule: `--experimental-strip-types` from
+/// 22.6, on by default from 22.18 in the 22 line and from 23.6.
+test "type_strip_support follows node's own schedule" {
+  assert_eq(@pm3.type_strip_support("v22.5.1"), @pm3.TsSupport::Unsupported)
+  assert_eq(@pm3.type_strip_support("v22.6.0"), @pm3.TsSupport::Flag)
+  assert_eq(@pm3.type_strip_support("v22.17.9"), @pm3.TsSupport::Flag)
+  assert_eq(@pm3.type_strip_support("v22.18.0"), @pm3.TsSupport::Native)
+  assert_eq(@pm3.type_strip_support("v23.5.0"), @pm3.TsSupport::Flag)
+  assert_eq(@pm3.type_strip_support("v23.6.0"), @pm3.TsSupport::Native)
+  assert_eq(@pm3.type_strip_support("24.1.0"), @pm3.TsSupport::Native)
+  assert_eq(@pm3.type_strip_support("v22"), @pm3.TsSupport::Unsupported)
+  assert_eq(@pm3.type_strip_support(""), @pm3.TsSupport::Unsupported)
+  assert_eq(@pm3.type_strip_support("nonsense"), @pm3.TsSupport::Unsupported)
+}
+
+///|
+/// A log path that names the null device is thrown away, not opened: the
+/// rotation would otherwise rename `/dev/null` and leave a regular file there.
+test "is_discard_log_path knows the null device" {
+  assert_true(@pm3.is_discard_log_path("/dev/null"))
+  assert_true(@pm3.is_discard_log_path(" /dev/NULL "))
+  assert_true(@pm3.is_discard_log_path(""))
+  assert_false(@pm3.is_discard_log_path("/var/log/app-out.log"))
+  assert_false(@pm3.is_discard_log_path("/dev/null2"))
 }

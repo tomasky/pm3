@@ -20,7 +20,9 @@ pub struct LogSink {
   config : @pm3.LogrotateConfig
   /// Queue receiving paths of freshly rotated files to gzip.
   compress_queue : @async.Queue[String]
-  mut file : @fs.File
+  /// The live descriptor. `None` for a discarding sink, and while a rotation
+  /// is between renaming the file and reopening the fresh one.
+  mut file : @fs.File?
   mut size : Int64
   /// Serializes writes and rotations.
   lock : @async.Mutex
@@ -47,6 +49,9 @@ pub struct LogSink {
   mut dropped_bytes : Int64
   /// Wall-clock time of the last reported sink error, to throttle messages.
   mut last_error_ms : Int64
+  /// A destination that is thrown away instead of written: `--out-file
+  /// /dev/null`. Nothing is opened, rotated, truncated or pruned for it.
+  discard : Bool
 }
 
 ///|
@@ -68,7 +73,7 @@ pub async fn LogSink::open(
     path,
     config,
     compress_queue,
-    file,
+    file: Some(file),
     size,
     lock: @async.Mutex(),
     rotate_requested: false,
@@ -80,7 +85,51 @@ pub async fn LogSink::open(
     needs_open: false,
     dropped_bytes: 0L,
     last_error_ms: 0L,
+    discard: false,
   }
+}
+
+///|
+/// A sink that throws its input away: `--out-file /dev/null`.
+///
+/// There is nothing to open — and, crucially, nothing to rotate. The rotation
+/// is a rename plus a reopen, so rotating the null device would rename it to
+/// `null__<stamp>.log` and create a *regular file* at `/dev/null` (as root on
+/// devtmpfs that succeeds). PM2's `StdioLogger` skips `NULL` and `/dev/null`
+/// log paths for the same reason.
+pub fn LogSink::discard(
+  path : String,
+  config : @pm3.LogrotateConfig,
+  compress_queue : @async.Queue[String],
+) -> LogSink {
+  {
+    path,
+    config,
+    compress_queue,
+    file: None,
+    size: 0L,
+    lock: @async.Mutex(),
+    rotate_requested: false,
+    tz_offset: pm3_local_offset(@async.now() / 1000L),
+    last_prune_ms: 0L,
+    rotations_since_prune: 0,
+    redirect_stderr: false,
+    closed: false,
+    needs_open: false,
+    dropped_bytes: 0L,
+    last_error_ms: 0L,
+    discard: true,
+  }
+}
+
+///|
+/// Close the live descriptor, if there is one.
+fn LogSink::close_live(self : LogSink) -> Unit {
+  match self.file {
+    Some(file) => file.close()
+    None => ()
+  }
+  self.file = None
 }
 
 ///|
@@ -88,11 +137,13 @@ pub async fn LogSink::open(
 /// when the file cannot be opened; `needs_open` then stays set so a later
 /// write (or the runner) retries.
 async fn LogSink::open_live(self : LogSink) -> Unit {
-  self.file = @fs.open(
-    self.path,
-    mode=@fs.WriteOnly,
-    append=true,
-    create_mode=@fs.OpenOrCreate,
+  self.file = Some(
+    @fs.open(
+      self.path,
+      mode=@fs.WriteOnly,
+      append=true,
+      create_mode=@fs.OpenOrCreate,
+    ),
   )
   self.needs_open = false
 }
@@ -145,7 +196,7 @@ async fn LogSink::note_error(
 pub async fn LogSink::write(self : LogSink, data : Bytes) -> Unit {
   self.lock.acquire()
   defer self.lock.release()
-  if self.closed {
+  if self.closed || self.discard {
     return
   }
   if self.needs_open {
@@ -154,7 +205,11 @@ pub async fn LogSink::write(self : LogSink, data : Bytes) -> Unit {
   if self.rotate_requested {
     self.do_rotate()
   }
-  self.file.write(data)
+  let file = match self.file {
+    Some(file) => file
+    None => return
+  }
+  file.write(data)
   self.size = self.size + data.length().to_int64()
   if self.dropped_bytes > 0L {
     daemon_log(
@@ -173,7 +228,7 @@ pub async fn LogSink::write(self : LogSink, data : Bytes) -> Unit {
 pub async fn LogSink::maybe_rotate(self : LogSink) -> Unit {
   self.lock.acquire()
   defer self.lock.release()
-  if self.closed {
+  if self.closed || self.discard {
     return
   }
   if self.needs_open {
@@ -203,17 +258,17 @@ pub fn LogSink::request_rotate(self : LogSink) -> Unit {
 pub async fn LogSink::flush(self : LogSink) -> Unit {
   self.lock.acquire()
   defer self.lock.release()
-  if self.closed {
+  if self.closed || self.discard {
     return
   }
-  if !self.needs_open {
-    self.file.close()
-  }
-  self.file = @fs.open(
-    self.path,
-    mode=@fs.WriteOnly,
-    append=true,
-    create_mode=@fs.CreateOrTruncate,
+  self.close_live()
+  self.file = Some(
+    @fs.open(
+      self.path,
+      mode=@fs.WriteOnly,
+      append=true,
+      create_mode=@fs.CreateOrTruncate,
+    ),
   )
   self.needs_open = false
   self.size = 0L
@@ -226,13 +281,16 @@ pub async fn LogSink::close(self : LogSink) -> Unit {
   defer self.lock.release()
   if !self.closed {
     self.closed = true
-    self.file.close()
+    self.close_live()
   }
 }
 
 ///|
 /// Delete rotated siblings beyond the retention policy.
 pub async fn LogSink::prune(self : LogSink, now : Int64) -> Unit {
+  if self.discard {
+    return
+  }
   self.rotations_since_prune = 0
   let dir = @pm3.path_dirname(self.path)
   let names = @fs.readdir(dir) catch { _ => return }
@@ -270,7 +328,7 @@ pub async fn LogSink::prune(self : LogSink, now : Int64) -> Unit {
 /// with zero-byte files.
 async fn LogSink::do_rotate(self : LogSink) -> Unit {
   self.rotate_requested = false
-  if self.size <= 0L {
+  if self.discard || self.size <= 0L {
     return
   }
   let now = @async.now() / 1000L
@@ -288,7 +346,7 @@ async fn LogSink::do_rotate(self : LogSink) -> Unit {
     collision = collision + 1
     target = @pm3.rotated_path(self.path, "\{stamp}-\{collision}", false)
   }
-  self.file.close()
+  self.close_live()
   // Renaming is metadata-only, so a rotation still works on a full disk; it
   // is the fresh live file that a full disk may refuse to create. Leave the
   // sink recoverable either way: `needs_open` makes the next write (or the

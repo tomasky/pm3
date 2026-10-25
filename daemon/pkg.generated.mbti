@@ -7,6 +7,7 @@ import {
   "moonbitlang/async/aqueue",
   "moonbitlang/async/fs",
   "moonbitlang/async/process",
+  "moonbitlang/core/debug",
 }
 
 // Values
@@ -14,9 +15,17 @@ pub async fn delete_managed(DaemonState, Managed) -> Unit
 
 pub async fn halt_managed(DaemonState, Managed) -> Unit
 
+pub async fn kill_tree(Int, Int) -> Int
+
+pub fn merge_trees(Array[ProcStat], Array[ProcStat]) -> Array[ProcStat]
+
 pub fn parse_fixed_tz(String) -> Int?
 
+pub fn parse_proc_stat(String, Int) -> ProcStat?
+
 pub fn pid_alive(Int) -> Bool
+
+pub async fn pid_is_running(Int) -> Bool
 
 pub fn pm3_clk_tck() -> Int
 
@@ -68,15 +77,23 @@ pub let sig_kill : Int
 
 pub let sig_term : Int
 
+pub async fn signal_members(Array[ProcStat], Int) -> Int
+
 pub fn signal_name(Int) -> String
 
 pub fn signal_number(String) -> Int
+
+pub async fn snapshot_tree(Int) -> Array[ProcStat]?
 
 pub fn start_managed(@async.TaskGroup[Unit], DaemonState, Managed) -> Unit
 
 pub async fn stop_managed(DaemonState, Managed) -> Unit
 
+pub async fn wait_members_gone(Array[ProcStat], Int) -> Bool
+
 pub async fn which(String) -> String?
+
+pub async fn which_runtime(String) -> String?
 
 // Errors
 
@@ -105,7 +122,7 @@ pub struct LogSink {
   path : String
   config : @pm3.LogrotateConfig
   compress_queue : @aqueue.Queue[String]
-  mut file : @fs.File
+  mut file : @fs.File?
   mut size : Int64
   lock : @async.Mutex
   mut rotate_requested : Bool
@@ -117,8 +134,10 @@ pub struct LogSink {
   mut needs_open : Bool
   mut dropped_bytes : Int64
   mut last_error_ms : Int64
+  discard : Bool
 }
 pub async fn LogSink::close(Self) -> Unit
+pub fn LogSink::discard(String, @pm3.LogrotateConfig, @aqueue.Queue[String]) -> Self
 pub async fn LogSink::flush(Self) -> Unit
 pub async fn LogSink::maybe_rotate(Self) -> Unit
 pub async fn LogSink::note_rotation_failure(Self, String) -> Unit
@@ -135,6 +154,16 @@ pub struct Managed {
   mut last_cpu_ticks : Int64
   mut last_cpu_at : Int64
 }
+
+pub(all) struct ProcStat {
+  pid : Int
+  ppid : Int
+  state : Char
+  start : Int64
+} derive(Eq, @debug.Debug)
+pub fn ProcStat::equal(Self, Self) -> Bool
+pub fn ProcStat::not_equal(Self, Self) -> Bool
+pub fn ProcStat::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

@@ -91,6 +91,12 @@ pub async fn DaemonState::sink_for(
   path : String,
   redirect_stderr? : Bool = false,
 ) -> LogSink {
+  // A stream the user silenced (`--out-file /dev/null`): there is nothing to
+  // write, and rotating it would replace the device node with a regular file.
+  // The sink is not cached because it owns no descriptor.
+  if @pm3.is_discard_log_path(path) {
+    return LogSink::discard(path, self.config, self.compress_queue)
+  }
   match self.sinks.get(path) {
     Some(sink) => sink
     None => {

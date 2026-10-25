@@ -199,7 +199,19 @@ async fn supervise(
       }
     }
     app.mark_started(proc.pid)
+    // Record the identity that goes with the pid: a later `resurrect` can
+    // only clear an orphan of ours if it can show the pid is still the
+    // process started here, and not one that recycled the number.
+    app.pid_start = match read_proc_stat(proc.pid) {
+      Some(stat) => stat.start
+      None => 0L
+    }
     managed.proc = Some(proc)
+    // Persist the pid and its identity right away: a daemon killed with
+    // SIGKILL leaves no chance to save it later, and without it `resurrect`
+    // cannot tell its own orphan from the next app that starts on the same
+    // port.
+    state.save()
     daemon_log("App [\{app.name}:\{app.pm_id}] online")
     // Reset the CPU sample baseline: a new pid has a fresh tick counter.
     managed.last_cpu_ticks = 0L
@@ -270,36 +282,90 @@ pub async fn stop_managed(state : DaemonState, managed : Managed) -> Unit {
     None => ()
     Some(proc) => {
       let pid = proc.pid
-      send_signal(pid, signal_number(app.kill_signal))
-      match managed.task {
-        None => ()
+      // The whole tree is signalled, not just the child pm3 spawned: a shell
+      // wrapper, `npm start` or a forking daemon puts the real work in
+      // grandchildren, and leaving them behind means the port is still taken
+      // after a `stop`. One snapshot drives both phases — once the root dies
+      // its children are reparented and are no longer findable from the pid —
+      // and every entry carries its `starttime`, so a pid the kernel recycled
+      // between the two signals is skipped instead of killed.
+      let tree = snapshot_tree(pid)
+      let members = match tree {
+        Some(members) => members
+        None => {
+          warn_no_proc()
+          []
+        }
+      }
+      let mut tree_size = if tree is None { 1 } else { members.length() }
+      match tree {
+        Some(members) =>
+          ignore(signal_members(members, signal_number(app.kill_signal)))
+        // No `/proc` to verify against: the root is all there is to signal.
+        None => send_signal(pid, signal_number(app.kill_signal))
+      }
+      // Grace is granted to the whole tree, not only to the root: a shell's
+      // background children may ignore the very signal the root exits on.
+      let gone = wait_members_gone(members, app.kill_timeout)
+      let finished = match managed.task {
+        None => true
         Some(task) => {
-          let finished = @async.with_timeout_opt(app.kill_timeout, () => {
-            task.wait()
-          }) catch {
+          // With no tree to poll (no `/proc`) this wait is the whole grace
+          // period, so it gets the configured timeout too.
+          let waited = @async.with_timeout_opt(
+            app.kill_timeout,
+            () => task.wait(),
+          ) catch {
             _ => Some(())
           }
-          match finished {
-            Some(_) => ()
-            None => {
-              daemon_log(
-                "Process with pid \{pid} still alive after \{app.kill_timeout}ms, sending SIGKILL to 1 remaining pids...",
-              )
-              send_signal(pid, sig_kill)
+          match waited {
+            Some(_) => true
+            None => false
+          }
+        }
+      }
+      if !gone || !finished {
+        // Anything spawned between the snapshot and now is still ours to
+        // kill, even though the first pass did not see it.
+        let remaining = merge_trees(
+          members,
+          match snapshot_tree(pid) {
+            Some(more) => more
+            None => []
+          },
+        )
+        // An empty list means there was no `/proc` to snapshot at all: the
+        // root is the only thing that can be signalled. Otherwise the count
+        // reported is what actually still belonged to this app — members that
+        // exited during the grace period are not "remaining".
+        let killed = if remaining.length() == 0 {
+          send_signal(pid, sig_kill)
+          1
+        } else {
+          signal_members(remaining, sig_kill)
+        }
+        tree_size = remaining.length()
+        daemon_log(
+          "Process with pid \{pid} still alive after \{app.kill_timeout}ms, sending SIGKILL to \{killed} remaining pids...",
+        )
+        if !finished {
+          match managed.task {
+            None => ()
+            Some(task) =>
               ignore(@async.with_timeout_opt(2000, () => task.wait())) catch {
                 _ => ()
               }
-            }
           }
         }
       }
       if was_online {
-        daemon_log("pid=\{pid} msg=process tree killed (1 pids)")
+        daemon_log("pid=\{pid} msg=process tree killed (\{tree_size} pids)")
       }
     }
   }
   app.status = @pm3.status_stopped
   app.pid = 0
+  app.pid_start = 0L
   managed.proc = None
   state.save()
 }
