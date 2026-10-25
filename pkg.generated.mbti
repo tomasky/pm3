@@ -27,7 +27,7 @@ pub fn bold_gray(String) -> String
 
 pub fn bold_inverse(String) -> String
 
-pub fn civil_from_days(Int) -> (Int, Int, Int)
+pub fn civil_from_days(Int32) -> (Int32, Int32, Int32)
 
 pub let cmd_delete : String
 
@@ -77,7 +77,7 @@ pub fn current_username() -> String
 
 pub fn daemon_process_title() -> String
 
-pub fn days_from_civil(Int, Int, Int) -> Int
+pub fn days_from_civil(Int32, Int32, Int32) -> Int32
 
 pub fn decode_request(String) -> Request?
 
@@ -87,7 +87,7 @@ pub fn default_config_source() -> ConfigSource
 
 pub fn default_kill_signal() -> String
 
-pub let default_kill_timeout_ms : Int
+pub let default_kill_timeout_ms : Int32
 
 pub fn default_log_path(String, String) -> String
 
@@ -109,15 +109,15 @@ pub fn format_cpu_percent(Double) -> String
 
 pub fn format_duration(Int64) -> String
 
-pub fn format_fixed(Double, Int) -> String
+pub fn format_fixed(Double, Int32) -> String
 
-pub fn format_size(Int64, precision? : Int) -> String
+pub fn format_size(Int64, precision? : Int32) -> String
 
 pub fn format_size_exact(Int64) -> String
 
-pub fn format_size_pm2(Int64, precision? : Int) -> String
+pub fn format_size_pm2(Int64, precision? : Int32) -> String
 
-pub fn format_timestamp(Int64, Int, String) -> String
+pub fn format_timestamp(Int64, Int32, String) -> String
 
 pub fn format_uptime_pm2(Int64) -> String
 
@@ -147,13 +147,13 @@ pub fn logrotate_to_json(LogrotateConfig) -> Json
 
 pub fn logrotate_to_toml(LogrotateConfig) -> String
 
-pub fn next_cron_fire(CronSpec, Int64, Int) -> Int64?
+pub fn next_cron_fire(CronSpec, Int64, Int32) -> Int64?
 
-pub fn pad_left_text(String, Int, Char) -> String
+pub fn pad_left_text(String, Int32, Char) -> String
 
-pub fn pad_right(String, Int, Char) -> String
+pub fn pad_right(String, Int32, Char) -> String
 
-pub fn pad_visible(String, Int, Char) -> String
+pub fn pad_visible(String, Int32, Char) -> String
 
 pub fn parse_bool_value(StringView) -> Bool?
 
@@ -161,7 +161,7 @@ pub fn parse_config_text(String, ConfigFormat) -> Result[Json, String]
 
 pub fn parse_cron(String) -> CronSpec?
 
-pub fn parse_non_negative_int(StringView) -> Int?
+pub fn parse_non_negative_int(StringView) -> Int32?
 
 pub fn parse_rotated_stamp(String, String) -> String?
 
@@ -189,7 +189,7 @@ pub fn pm3_dump_path() -> String
 
 pub fn pm3_home() -> String
 
-pub fn pm3_isatty(Int) -> Int
+pub fn pm3_isatty(Int32) -> Int32
 
 pub fn pm3_log_dir() -> String
 
@@ -223,13 +223,13 @@ pub fn save_logrotate_config(LogrotateConfig, ConfigSource) -> Result[Unit, Stri
 
 pub fn script_extension(String) -> String
 
-pub fn select_for_deletion(Array[RotatedFile], Int, Int, Int64) -> Array[String]
+pub fn select_for_deletion(Array[RotatedFile], Int32, Int32, Int64) -> Array[String]
 
 pub fn set_colors_enabled(Bool) -> Unit
 
 pub fn split_shell_words(String) -> Array[String]
 
-pub fn split_timestamp(Int64) -> (Int, Int, Int, Int, Int, Int, Int)
+pub fn split_timestamp(Int64) -> (Int32, Int32, Int32, Int32, Int32, Int32, Int32)
 
 pub let status_errored : String
 
@@ -261,13 +261,13 @@ pub fn style_red(String) -> String
 
 pub fn style_yellow(String) -> String
 
-pub fn truncate_text(String, Int) -> String
+pub fn truncate_text(String, Int32) -> String
 
 pub fn type_strip_support(String) -> TsSupport
 
-pub fn visible_width(String) -> Int
+pub fn visible_width(String) -> Int32
 
-pub fn weekday_from_days(Int) -> Int
+pub fn weekday_from_days(Int32) -> Int32
 
 pub fn with_app_defaults(Json) -> Json
 
@@ -279,7 +279,7 @@ pub fn yellow_bold(String) -> String
 
 // Types and methods
 pub(all) struct App {
-  mut pm_id : Int
+  mut pm_id : Int32
   mut name : String
   mut app_namespace : String
   mut script : String
@@ -293,25 +293,25 @@ pub(all) struct App {
   mut merge_logs : Bool
   mut log_date_format : String
   mut autorestart : Bool
-  mut max_restarts : Int
-  mut restart_delay : Int
-  mut min_uptime : Int
+  mut max_restarts : Int32
+  mut restart_delay : Int32
+  mut min_uptime : Int32
   mut max_memory_restart : Int64
-  mut kill_timeout : Int
+  mut kill_timeout : Int32
   mut kill_signal : String
-  mut stop_exit_codes : Array[Int]
+  mut stop_exit_codes : Array[Int32]
   mut status : String
   mut version : String
   mut username : String
   mut desired_state : String
-  mut pid : Int
+  mut pid : Int32
   mut pid_start : Int64
-  mut restarts : Int
-  mut unstable_restarts : Int
+  mut restarts : Int32
+  mut unstable_restarts : Int32
   mut created_at : Int64
   mut started_at : Int64
   mut stopped_at : Int64
-  mut exit_code : Int
+  mut exit_code : Int32
   mut out_log_size : Int64
   mut err_log_size : Int64
   mut memory : Int64
@@ -320,16 +320,16 @@ pub(all) struct App {
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn App::command_display(Self) -> String
 pub fn App::command_line(Self) -> (String, Array[String])
-pub fn App::display_pid(Self) -> Int
+pub fn App::display_pid(Self) -> Int32
 pub fn App::equal(Self, Self) -> Bool
 pub fn App::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn App::is_online(Self) -> Bool
-pub fn App::mark_exited(Self, Int) -> Unit
-pub fn App::mark_started(Self, Int) -> Unit
+pub fn App::mark_exited(Self, Int32) -> Unit
+pub fn App::mark_started(Self, Int32) -> Unit
 pub fn App::new(String, String, Array[String]) -> Self
 pub fn App::not_equal(Self, Self) -> Bool
 pub fn App::record_restart(Self) -> Unit
-pub fn App::should_restart(Self, Int) -> Bool
+pub fn App::should_restart(Self, Int32) -> Bool
 pub fn App::to_json(Self) -> Json
 pub fn App::to_repr(Self) -> @debug.Repr
 pub fn App::to_summary_json(Self) -> Json
@@ -352,12 +352,12 @@ pub fn ConfigSource::not_equal(Self, Self) -> Bool
 pub fn ConfigSource::to_repr(Self) -> @debug.Repr
 
 pub struct CronSpec {
-  seconds : Array[Int]
-  minutes : Array[Int]
-  hours : Array[Int]
-  days_of_month : Array[Int]
-  months : Array[Int]
-  days_of_week : Array[Int]
+  seconds : Array[Int32]
+  minutes : Array[Int32]
+  hours : Array[Int32]
+  days_of_month : Array[Int32]
+  months : Array[Int32]
+  days_of_week : Array[Int32]
   seconds_restricted : Bool
   dom_restricted : Bool
   dow_restricted : Bool
@@ -368,16 +368,16 @@ pub fn CronSpec::to_repr(Self) -> @debug.Repr
 
 pub struct LogrotateConfig {
   mut max_size : Int64
-  mut retain : Int
+  mut retain : Int32
   mut compress : Bool
-  mut compression_level : Int
+  mut compression_level : Int32
   mut date_format : String
-  mut worker_interval : Int
+  mut worker_interval : Int32
   mut rotate_interval : String
   mut tz : String
   mut rotate_module : Bool
   mut min_size : Int64
-  mut max_age_days : Int
+  mut max_age_days : Int32
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn LogrotateConfig::equal(Self, Self) -> Bool
 pub fn LogrotateConfig::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
