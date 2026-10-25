@@ -68,7 +68,10 @@ test "selection: lifecycle commands take a name, an id, a namespace or all" {
 ///|
 test "selection: a numeric name still resolves when no process carries that id" {
   let state = sel_state([sel_app("7")])
-  let found = select_lifecycle_apps(state, @pm3.Request::with_args("stop", ["7"]))
+  let found = select_lifecycle_apps(
+    state,
+    @pm3.Request::with_args("stop", ["7"]),
+  )
   assert_eq(found.length(), 1)
   assert_eq(found[0].app.name, "7")
 }
@@ -76,7 +79,10 @@ test "selection: a numeric name still resolves when no process carries that id" 
 ///|
 test "selection: describe takes a name or an id" {
   let state = sel_state([sel_app("alpha"), sel_app("beta")])
-  let by_name = select_apps(state, @pm3.Request::with_args("describe", ["alpha"]))
+  let by_name = select_apps(
+    state,
+    @pm3.Request::with_args("describe", ["alpha"]),
+  )
   assert_eq(by_name.length(), 1)
   assert_eq(by_name[0].app.pm_id, 0)
   let by_id = select_apps(state, @pm3.Request::with_args("describe", ["1"]))

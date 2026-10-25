@@ -4,7 +4,7 @@
 
 ///|
 /// The port published by a running daemon, if any.
-async fn read_port_file() -> Int? {
+async fn read_port_file() -> Int32? {
   let path = @pm3.pm3_port_path()
   let exists = @fs.exists(path) catch { _ => false }
   if !exists {
@@ -111,8 +111,7 @@ fn version_skew_warning(remote : String, own : String) -> String {
   )
   buf.write_string("\n")
   buf.write_string(
-    "Local pm3 version: " +
-    (if colors() { @pm3.blue_bold(own) } else { own }),
+    "Local pm3 version: " + (if colors() { @pm3.blue_bold(own) } else { own }),
   )
   buf.write_string("\n\n")
   buf.to_string()
@@ -147,7 +146,10 @@ async fn warn_if_daemon_is_stale() -> Unit {
 /// does not race the old one for the home.
 async fn wait_for_daemon_exit() -> Unit {
   for _ in 0..<50 {
-    match @async.with_timeout_opt(1000, () => try_call(@pm3.Request::new(@pm3.cmd_ping))) {
+    match
+      @async.with_timeout_opt(1000, () => {
+        try_call(@pm3.Request::new(@pm3.cmd_ping))
+      }) {
       Some(None) => return
       _ => @async.sleep(100)
     }

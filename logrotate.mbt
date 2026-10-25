@@ -25,16 +25,16 @@ pub struct LogrotateConfig {
   /// Rotate when a log reaches this many bytes. `0` disables size rotation.
   mut max_size : Int64
   /// Keep at most this many rotated files per log. `0` keeps only the current.
-  mut retain : Int
+  mut retain : Int32
   /// Gzip rotated files in the background.
   mut compress : Bool
   /// Gzip level, 1 (fast) to 9 (small). Defaults to 9, the fixed
   /// `Z_BEST_COMPRESSION` level `pm2-logrotate` uses.
-  mut compression_level : Int
+  mut compression_level : Int32
   /// `moment`-style token string used in rotated file names.
   mut date_format : String
   /// How often, in seconds, the daemon checks log sizes. Minimum 1.
-  mut worker_interval : Int
+  mut worker_interval : Int32
   /// Cron expression that forces a rotation.
   mut rotate_interval : String
   /// Optional fixed UTC offset for file names, e.g. `UTC+8`. Empty = system.
@@ -44,7 +44,7 @@ pub struct LogrotateConfig {
   /// Never rotate a file smaller than this. Guards against rotating empty logs.
   mut min_size : Int64
   /// Delete rotated files older than this many days. `0` disables the age cap.
-  mut max_age_days : Int
+  mut max_age_days : Int32
 } derive(Eq, Debug, ToJson, FromJson)
 
 ///|
@@ -144,8 +144,8 @@ pub fn rotation_due(size : Int64, config : LogrotateConfig) -> Bool {
 /// of position.
 pub fn select_for_deletion(
   files : Array[RotatedFile],
-  retain : Int,
-  max_age_days : Int,
+  retain : Int32,
+  max_age_days : Int32,
   now : Int64,
 ) -> Array[String] {
   let sorted = files.copy()
@@ -164,7 +164,7 @@ pub fn select_for_deletion(
 
 ///|
 /// Three-way comparison for `Int64` values.
-fn compare_int64(a : Int64, b : Int64) -> Int {
+fn compare_int64(a : Int64, b : Int64) -> Int32 {
   if a < b {
     -1
   } else if a > b {
@@ -276,7 +276,7 @@ pub fn LogrotateConfig::set_field(
 
 ///|
 /// Parse a base-10 non-negative integer.
-pub fn parse_non_negative_int(text : StringView) -> Int? {
+pub fn parse_non_negative_int(text : StringView) -> Int32? {
   let t = text.trim()
   if t.length() == 0 {
     return None

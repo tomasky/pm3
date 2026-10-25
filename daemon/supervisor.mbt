@@ -55,7 +55,7 @@ fn stamp_lines(
 /// instead of failing the daemon's task group: with `allow_failure=false`
 /// (the default) a single raise in a child would cancel every other task in
 /// the group, taking the whole daemon down with it.
-async fn guarded(name : String, body : async () -> Unit raise) -> Unit {
+async fn guarded(name : String, body : async () -> Unit) -> Unit {
   body() catch {
     e => daemon_log("\{name} failed: \{e}")
   }
@@ -96,9 +96,7 @@ async fn pump(
         // stdout would hit a closed pipe and the app would be killed by its
         // own logging. PM2 likewise keeps the app running and loses the
         // lines; the sink reports the failure itself.
-        try {
-          sink.write(data)
-        } catch {
+        sink.write(data) catch {
           e => sink.note_write_failure(data.length(), "\{e}")
         }
       }
@@ -108,7 +106,7 @@ async fn pump(
 
 ///|
 /// Sleep for `total_ms`, waking early when a stop is requested.
-async fn interruptible_sleep(app : @pm3.App, total_ms : Int) -> Unit {
+async fn interruptible_sleep(app : @pm3.App, total_ms : Int32) -> Unit {
   let mut waited = 0
   while waited < total_ms && !app.wants_stop() {
     let step = if total_ms - waited < 50 { total_ms - waited } else { 50 }
@@ -125,7 +123,7 @@ async fn interruptible_sleep(app : @pm3.App, total_ms : Int) -> Unit {
 /// process died to a signal, and PM2 prints `0` for those because the JS
 /// exit code is `null`. Natural exits print their code and PM2's
 /// `kill_signal || 'SIGINT'` fallback.
-fn app_exit_line(app : @pm3.App, code : Int) -> String {
+fn app_exit_line(app : @pm3.App, code : Int32) -> String {
   let (shown_code, signal) = if code < 0 {
     (0, signal_name(-code))
   } else {
@@ -140,7 +138,7 @@ fn app_exit_line(app : @pm3.App, code : Int) -> String {
 async fn supervise(
   group : @async.TaskGroup[Unit],
   state : DaemonState,
-  id : Int,
+  id : Int32,
 ) -> Unit {
   while state.running {
     let managed = match state.get(id) {
@@ -220,12 +218,16 @@ async fn supervise(
     // pipe, a log file the daemon cannot write) must not fail the daemon's
     // task group — that would cancel every other task in it — so each runs
     // under `guarded` and only reports.
-    group.spawn_bg(
-      () => guarded("log pump for \{app.name}", () => pump(read_out, out_sink, app.log_date_format)),
-    )
-    group.spawn_bg(
-      () => guarded("log pump for \{app.name}", () => pump(read_err, err_sink, app.log_date_format)),
-    )
+    group.spawn_bg(() => {
+      guarded("log pump for \{app.name}", () => {
+        pump(read_out, out_sink, app.log_date_format)
+      })
+    })
+    group.spawn_bg(() => {
+      guarded("log pump for \{app.name}", () => {
+        pump(read_err, err_sink, app.log_date_format)
+      })
+    })
     let code = proc.wait()
     app.mark_exited(code)
     managed.proc = None
@@ -258,10 +260,11 @@ pub fn start_managed(
   let app = managed.app
   app.desired_state = @pm3.status_online
   app.status = @pm3.status_launching
-  let task = group.spawn(
-    no_wait=true,
-    () => guarded("supervisor for \{app.name}", () => supervise(group, state, app.pm_id)),
-  )
+  let task = group.spawn(no_wait=true, () => {
+    guarded("supervisor for \{app.name}", () => {
+      supervise(group, state, app.pm_id)
+    })
+  })
   managed.task = Some(task)
 }
 
@@ -312,10 +315,9 @@ pub async fn stop_managed(state : DaemonState, managed : Managed) -> Unit {
         Some(task) => {
           // With no tree to poll (no `/proc`) this wait is the whole grace
           // period, so it gets the configured timeout too.
-          let waited = @async.with_timeout_opt(
-            app.kill_timeout,
-            () => task.wait(),
-          ) catch {
+          let waited = @async.with_timeout_opt(app.kill_timeout, () => {
+            task.wait()
+          }) catch {
             _ => Some(())
           }
           match waited {

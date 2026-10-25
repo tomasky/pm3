@@ -96,7 +96,7 @@ pub fn parse_size_or(text : StringView, default : Int64) -> Int64 {
 
 ///|
 /// Left-pad `text` with `pad` until it is at least `width` characters wide.
-fn pad_left(text : String, width : Int, pad : Char) -> String {
+fn pad_left(text : String, width : Int32, pad : Char) -> String {
   if text.length() >= width {
     return text
   }
@@ -111,7 +111,7 @@ fn pad_left(text : String, width : Int, pad : Char) -> String {
 ///|
 /// Format `value` with a fixed number of decimal places, without relying on
 /// locale-aware formatting.
-pub fn format_fixed(value : Double, precision : Int) -> String {
+pub fn format_fixed(value : Double, precision : Int32) -> String {
   let p = if precision < 0 { 0 } else { precision }
   let mut factor = 1.0
   for _ in 0..<p {
@@ -134,7 +134,7 @@ pub fn format_fixed(value : Double, precision : Int) -> String {
 
 ///|
 /// Format a byte count with a binary unit and `precision` decimals.
-pub fn format_size(bytes : Int64, precision? : Int) -> String {
+pub fn format_size(bytes : Int64, precision? : Int32) -> String {
   let p = match precision {
     Some(p) => p
     None => 2
@@ -188,7 +188,7 @@ pub fn format_size_exact(bytes : Int64) -> String {
 /// number they show for the same process. PM2's own function appends a
 /// trailing space (`'24.1mb '`); that only matters where the value is
 /// concatenated into a sentence, and the tables pad the cell anyway.
-pub fn format_size_pm2(bytes : Int64, precision? : Int) -> String {
+pub fn format_size_pm2(bytes : Int64, precision? : Int32) -> String {
   let p = match precision {
     Some(p) => p
     None => 1

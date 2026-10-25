@@ -22,7 +22,10 @@ test "daemon_line matches PM2's console wrapper" {
 ///|
 test "daemon_field pads keys to 20 columns" {
   assert_eq(daemon_field("Time", "now"), "Time                 : now")
-  assert_eq(daemon_field("Application log path", "/tmp"), "Application log path : /tmp")
+  assert_eq(
+    daemon_field("Application log path", "/tmp"),
+    "Application log path : /tmp",
+  )
   // Keys longer than the field are not truncated.
   assert_eq(
     daemon_field("a-very-long-key-name-here", "x"),
@@ -40,7 +43,10 @@ test "daemon_banner_lines mirror PM2's banner shape" {
   assert_eq(lines[0].length(), 79)
   assert_eq(lines[1].length(), 79)
   assert_true(lines[1].has_prefix("--- New PM3 Daemon started "))
-  assert_eq(lines[2], "Time                 : Fri Jan 01 2021 00:00:00 GMT+0000")
+  assert_eq(
+    lines[2],
+    "Time                 : Fri Jan 01 2021 00:00:00 GMT+0000",
+  )
   assert_eq(lines[3], "PM3 version          : " + @pm3.pm3_version)
   assert_true(lines[4].has_prefix("Current arch         : "))
   assert_eq(lines[5], "PM3 home             : " + @pm3.pm3_state_dir())

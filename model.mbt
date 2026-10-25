@@ -24,7 +24,7 @@ pub let status_errored : String = "errored"
 /// A process managed by pm3.
 pub(all) struct App {
   // --- identity ---
-  mut pm_id : Int
+  mut pm_id : Int32
   mut name : String
   /// The namespace the app belongs to — PM2's `pm2_env.namespace`. `default`
   /// unless `--namespace` (or the config file) says otherwise. The field is
@@ -52,19 +52,19 @@ pub(all) struct App {
   mut log_date_format : String
   // --- supervision ---
   mut autorestart : Bool
-  mut max_restarts : Int
+  mut max_restarts : Int32
   /// Delay before a restart, in milliseconds.
-  mut restart_delay : Int
+  mut restart_delay : Int32
   /// A process that dies sooner than this is considered unstable.
-  mut min_uptime : Int
+  mut min_uptime : Int32
   /// Restart when RSS exceeds this many bytes. `0` disables the check.
   mut max_memory_restart : Int64
   /// Grace period before SIGKILL, in milliseconds.
-  mut kill_timeout : Int
+  mut kill_timeout : Int32
   /// Signal used for graceful shutdown.
   mut kill_signal : String
   /// Exit codes that should *not* trigger an automatic restart.
-  mut stop_exit_codes : Array[Int]
+  mut stop_exit_codes : Array[Int32]
   // --- runtime state ---
   mut status : String
   /// The app's own version — the `version` of the nearest `package.json` at
@@ -74,7 +74,7 @@ pub(all) struct App {
   mut username : String
   /// What the user asked for: `online` or `stopped`.
   mut desired_state : String
-  mut pid : Int
+  mut pid : Int32
   /// The kernel's `starttime` for `pid` (clock ticks since boot, `/proc/<pid>/stat`
   /// field 22), recorded when the process was started. A pid alone does not
   /// name a process — the kernel recycles them — so this is what lets
@@ -82,12 +82,12 @@ pub(all) struct App {
   /// which is the bug PM2's stale `_tree_pids` caused. `0` means "unknown",
   /// and an unknown pid is never signalled.
   mut pid_start : Int64
-  mut restarts : Int
-  mut unstable_restarts : Int
+  mut restarts : Int32
+  mut unstable_restarts : Int32
   mut created_at : Int64
   mut started_at : Int64
   mut stopped_at : Int64
-  mut exit_code : Int
+  mut exit_code : Int32
   mut out_log_size : Int64
   mut err_log_size : Int64
   mut memory : Int64
@@ -121,7 +121,7 @@ pub fn current_username() -> String {
 
 ///|
 /// `getuid(2)` from the C library.
-extern "C" fn pm3_uid() -> Int = "pm3_uid"
+extern "C" fn pm3_uid() -> Int32 = "pm3_uid"
 
 ///|
 /// Resolve `/etc/passwd` for the uid this process runs as.
@@ -161,7 +161,7 @@ pub fn default_kill_signal() -> String {
 ///|
 /// The default grace period before escalating to `SIGKILL`, matching PM2's
 /// `KILL_TIMEOUT`.
-pub let default_kill_timeout_ms : Int = 1600
+pub let default_kill_timeout_ms : Int32 = 1600
 
 ///|
 /// Build a new application with conservative defaults.
@@ -249,7 +249,7 @@ pub fn App::is_online(self : App) -> Bool {
 /// A record loaded from `dump.json` keeps the last pid it ran with, because
 /// `pm3 resurrect` needs it to clear an orphan left by a hard daemon death;
 /// that pid must not be presented as if the process were still running.
-pub fn App::display_pid(self : App) -> Int {
+pub fn App::display_pid(self : App) -> Int32 {
   if self.is_online() {
     self.pid
   } else {
@@ -265,7 +265,7 @@ pub fn App::wants_stop(self : App) -> Bool {
 
 ///|
 /// Record that the process just started.
-pub fn App::mark_started(self : App, pid : Int) -> Unit {
+pub fn App::mark_started(self : App, pid : Int32) -> Unit {
   self.pid = pid
   self.status = status_online
   self.started_at = @env.now().reinterpret_as_int64()
@@ -277,7 +277,7 @@ pub fn App::mark_started(self : App, pid : Int) -> Unit {
 /// Record that the process exited with `code`. The resource samples are
 /// dropped with it: PM2's monitor reports `0` for anything that is not
 /// running, and the last sample of a dead process is not memory it holds.
-pub fn App::mark_exited(self : App, code : Int) -> Unit {
+pub fn App::mark_exited(self : App, code : Int32) -> Unit {
   self.pid = 0
   self.pid_start = 0L
   self.memory = 0L
@@ -293,7 +293,7 @@ pub fn App::mark_exited(self : App, code : Int) -> Unit {
 
 ///|
 /// Whether the process should be restarted after exiting with `code`.
-pub fn App::should_restart(self : App, code : Int) -> Bool {
+pub fn App::should_restart(self : App, code : Int32) -> Bool {
   if self.wants_stop() {
     return false
   }

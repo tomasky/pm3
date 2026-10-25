@@ -188,9 +188,9 @@ test "select_for_deletion keeps newest and prunes by age" {
 test "select_for_deletion orders by sub-second mtime" {
   let base = 1_000_000_000L * 1_000_000_000L
   let files : Array[@pm3.RotatedFile] = [
-    { name: "oldest", mtime: base + 1_000_000L },
-    { name: "newest", mtime: base + 9_000_000L },
-    { name: "middle", mtime: base + 5_000_000L },
+    { name: "oldest", mtime: base + 1_000_000L, },
+    { name: "newest", mtime: base + 9_000_000L, },
+    { name: "middle", mtime: base + 5_000_000L, },
   ]
   assert_eq(@pm3.select_for_deletion(files, 1, 0, base + 9_000_000L), [
     "middle", "oldest",
@@ -611,9 +611,15 @@ test "render_box colors borders, header and keys the way PM2 does" {
 /// at or above the script, and `N/A` when there is none.
 test "find_package_version walks up to package.json" {
   let base = "/tmp/pm3-find-version"
-  @fs.create_dir(base) catch { _ => () }
-  @fs.create_dir(base + "/with") catch { _ => () }
-  @fs.create_dir(base + "/with/sub") catch { _ => () }
+  @fs.create_dir(base) catch {
+    _ => ()
+  }
+  @fs.create_dir(base + "/with") catch {
+    _ => ()
+  }
+  @fs.create_dir(base + "/with/sub") catch {
+    _ => ()
+  }
   @fs.write_string_to_file(
     base + "/with/package.json",
     "{\"version\": \"1.2.3\"}",
@@ -626,14 +632,20 @@ test "find_package_version walks up to package.json" {
   assert_eq(@pm3.find_package_version("app.js", base + "/with"), "1.2.3")
   // A package.json without a version stops the walk with `N/A`, the way
   // PM2's finder does.
-  @fs.create_dir(base + "/nover") catch { _ => () }
+  @fs.create_dir(base + "/nover") catch {
+    _ => ()
+  }
   @fs.write_string_to_file(base + "/nover/package.json", "{\"name\": \"x\"}") catch {
     _ => ()
   }
   assert_eq(@pm3.find_package_version(base + "/nover/app.js", ""), "N/A")
   // An unparsable package.json is skipped, so a valid one further up wins.
-  @fs.create_dir(base + "/broken") catch { _ => () }
-  @fs.create_dir(base + "/broken/inner") catch { _ => () }
+  @fs.create_dir(base + "/broken") catch {
+    _ => ()
+  }
+  @fs.create_dir(base + "/broken/inner") catch {
+    _ => ()
+  }
   @fs.write_string_to_file(
     base + "/broken/package.json",
     "{\"version\": \"9.9.9\"}",
@@ -643,9 +655,14 @@ test "find_package_version walks up to package.json" {
   @fs.write_string_to_file(base + "/broken/inner/package.json", "{not json") catch {
     _ => ()
   }
-  assert_eq(@pm3.find_package_version(base + "/broken/inner/app.js", ""), "9.9.9")
+  assert_eq(
+    @pm3.find_package_version(base + "/broken/inner/app.js", ""),
+    "9.9.9",
+  )
   // Nothing above the script at all.
-  @fs.create_dir(base + "/none") catch { _ => () }
+  @fs.create_dir(base + "/none") catch {
+    _ => ()
+  }
   assert_eq(@pm3.find_package_version(base + "/none/app.js", ""), "N/A")
 }
 
@@ -700,10 +717,11 @@ test "display_pid hides the pid of a stopped app" {
 /// segment, an optional Windows extension and an optional trailing version
 /// are looked at, and the match is anchored on the end of the name.
 test "runtime_of recognises node and bun under all their names" {
-  for name in [
-    "node", "/usr/bin/node", "nodejs", "node.exe", "node64.exe", "node@18",
-    "node18", "node-v20.1.0", "C:\\nvm\\v18.0.0\\node.exe",
-  ] {
+  for
+    name in [
+      "node", "/usr/bin/node", "nodejs", "node.exe", "node64.exe", "node@18", "node18",
+      "node-v20.1.0", "C:\\nvm\\v18.0.0\\node.exe",
+    ] {
     assert_eq(@pm3.runtime_of(name), Some("node"))
   }
   for name in ["bun", "/home/ubuntu/.bun/bin/bun", "bun.exe", "bun-1.1"] {

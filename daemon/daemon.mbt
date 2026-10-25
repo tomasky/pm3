@@ -42,7 +42,7 @@ fn opt_bool(value : String, fallback : Bool) -> Bool {
 
 ///|
 /// Integer option with a default.
-fn opt_int(value : String, fallback : Int) -> Int {
+fn opt_int(value : String, fallback : Int32) -> Int32 {
   match @pm3.parse_non_negative_int(value) {
     Some(v) => v
     None => fallback
@@ -79,7 +79,7 @@ fn apply_start_opts(app : @pm3.App, opts : Map[String, String]) -> Unit {
       "kill_timeout" => app.kill_timeout = opt_int(value, 1600)
       "kill_signal" => app.kill_signal = value
       "stop_exit_codes" => {
-        let codes : Array[Int] = []
+        let codes : Array[Int32] = []
         for part in value.split(",") {
           match @pm3.parse_non_negative_int(part) {
             Some(code) => codes.push(code)
@@ -620,9 +620,7 @@ async fn handle_connection(
     Some(request) =>
       // A failing request must answer with an error, not fail this task:
       // an uncaught raise here used to fail the daemon's whole task group.
-      try {
-        dispatch(group, state, request)
-      } catch {
+      dispatch(group, state, request) catch {
         e => @pm3.Response::failure("internal error: \{e}")
       }
   }
@@ -643,7 +641,9 @@ async fn accept_loop(
   while state.running {
     let (conn, _) = server.accept()
     // One bad connection must not fail the group and take the daemon down.
-    group.spawn_bg(allow_failure=true, () => handle_connection(group, state, conn))
+    group.spawn_bg(allow_failure=true, () => {
+      handle_connection(group, state, conn)
+    })
   }
 }
 
@@ -677,7 +677,7 @@ fn normalize_loaded_state(state : DaemonState) -> Unit {
 async fn worker_loop(
   state : DaemonState,
   name : String,
-  body : async () -> Unit raise,
+  body : async () -> Unit,
 ) -> Unit {
   while state.running {
     body() catch {
@@ -698,9 +698,7 @@ pub async fn run_daemon() -> Unit {
   // the same string as an argument to guarantee the block is large enough.
   pm3_set_process_title(@utf8.encode(@pm3.daemon_process_title()))
   ensure_dirs()
-  let exe = @fs.realpath("/proc/self/exe") catch {
-    _ => ""
-  }
+  let exe = @fs.realpath("/proc/self/exe") catch { _ => "" }
   daemon_banner(exe)
   let (config, config_source) = @pm3.load_logrotate_config()
   let state = DaemonState::new(config, config_source)
@@ -709,9 +707,7 @@ pub async fn run_daemon() -> Unit {
   // The daemon's own log rotates under the same policy as application logs —
   // `pm2-logrotate` rotates `pm2.log` the same way — while `reloadLogs` and
   // the cron trigger leave it alone, again matching `pm2-logrotate`.
-  ignore(
-    state.sink_for(@pm3.pm3_daemon_log_path(), redirect_stderr=true),
-  ) catch {
+  ignore(state.sink_for(@pm3.pm3_daemon_log_path(), redirect_stderr=true)) catch {
     _ => ()
   }
   @async.with_task_group(group => {
@@ -720,9 +716,17 @@ pub async fn run_daemon() -> Unit {
     state.port = server.addr.port()
     write_text_file(@pm3.pm3_port_path(), state.port.to_string())
     write_text_file(@pm3.pm3_pid_path(), pm3_getpid().to_string())
-    group.spawn_bg(() => worker_loop(state, "log rotation", () => run_logrotate_loop(state)))
-    group.spawn_bg(() => worker_loop(state, "log compression", () => run_compress_loop(state)))
-    group.spawn_bg(() => worker_loop(state, "process monitoring", () => run_monitor_loop(group, state)))
+    group.spawn_bg(() => {
+      worker_loop(state, "log rotation", () => run_logrotate_loop(state))
+    })
+    group.spawn_bg(() => {
+      worker_loop(state, "log compression", () => run_compress_loop(state))
+    })
+    group.spawn_bg(() => {
+      worker_loop(state, "process monitoring", () => {
+        run_monitor_loop(group, state)
+      })
+    })
     group.spawn_bg(() => accept_loop(group, state, server))
     // The accept loop flips `running` when `pm3 kill` arrives.
     while state.running {

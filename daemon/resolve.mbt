@@ -104,7 +104,7 @@ fn interpreter_unavailable(interpreter : String) -> String {
 ///|
 /// Read at most `max` bytes from the head of a file; `None` when the file
 /// cannot be read at all.
-async fn read_head(path : String, max : Int) -> Bytes? {
+async fn read_head(path : String, max : Int32) -> Bytes? {
   let file = @fs.open(path, mode=@fs.ReadOnly, create_mode=@fs.OpenExisting) catch {
     _ => return None
   }
@@ -149,9 +149,7 @@ pub async fn which_runtime(runtime : String) -> String? {
     if dir.length() == 0 {
       continue
     }
-    let names = @fs.readdir(dir) catch {
-      _ => continue
-    }
+    let names = @fs.readdir(dir) catch { _ => continue }
     for name in names {
       match @pm3.runtime_of(name) {
         Some(kind) if kind == runtime => {
@@ -204,9 +202,7 @@ async fn node_version(node : String) -> String {
     _ => return ""
   }
   let (_, data) = result
-  let text = data.text() catch {
-    _ => return ""
-  }
+  let text = data.text() catch { _ => return "" }
   text.trim().to_owned()
 }
 

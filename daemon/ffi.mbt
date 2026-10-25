@@ -3,36 +3,36 @@
 
 ///|
 /// Detach from the controlling terminal / create a new session.
-pub extern "C" fn pm3_setsid() -> Int = "pm3_setsid"
+pub extern "C" fn pm3_setsid() -> Int32 = "pm3_setsid"
 
 ///|
 /// The daemon's own process id.
-pub extern "C" fn pm3_getpid() -> Int = "pm3_getpid"
+pub extern "C" fn pm3_getpid() -> Int32 = "pm3_getpid"
 
 ///|
 /// `kill(2)`. Returns 0 on success, -1 on error.
-pub extern "C" fn pm3_kill(pid : Int, sig : Int) -> Int = "pm3_kill"
+pub extern "C" fn pm3_kill(pid : Int32, sig : Int32) -> Int32 = "pm3_kill"
 
 ///|
 /// Non-zero when `pid` refers to a live process.
-pub extern "C" fn pm3_pid_alive(pid : Int) -> Int = "pm3_pid_alive"
+pub extern "C" fn pm3_pid_alive(pid : Int32) -> Int32 = "pm3_pid_alive"
 
 ///|
 /// Seconds east of UTC for the system timezone at `epoch_secs`.
-pub extern "C" fn pm3_local_offset(epoch_secs : Int64) -> Int = "pm3_local_offset"
+pub extern "C" fn pm3_local_offset(epoch_secs : Int64) -> Int32 = "pm3_local_offset"
 
 ///|
 /// Memory page size, used to translate `/proc/<pid>/statm`.
-pub extern "C" fn pm3_pagesize() -> Int = "pm3_pagesize"
+pub extern "C" fn pm3_pagesize() -> Int32 = "pm3_pagesize"
 
 ///|
 /// `uname(2)` machine class: 1 x86-64, 2 aarch64, 3 32-bit ARM, 4 ia32,
 /// 5 ppc64, 6 s390x, 7 riscv64, 0 anything else.
-pub extern "C" fn pm3_uname_machine() -> Int = "pm3_uname_machine"
+pub extern "C" fn pm3_uname_machine() -> Int32 = "pm3_uname_machine"
 
 ///|
 /// `sysconf(_SC_CLK_TCK)`, used to translate CPU tick counts to seconds.
-pub extern "C" fn pm3_clk_tck() -> Int = "pm3_clk_tck"
+pub extern "C" fn pm3_clk_tck() -> Int32 = "pm3_clk_tck"
 
 ///|
 /// Rename the process the way PM2 renames its God daemon: the title replaces
@@ -51,20 +51,20 @@ pub extern "C" fn pm3_reopen_stderr(path : Bytes) -> Unit = "pm3_reopen_stderr"
 
 ///|
 /// Signal numbers, as understood by `kill(2)`.
-pub let sig_term : Int = 15
+pub let sig_term : Int32 = 15
 
 ///|
-pub let sig_kill : Int = 9
+pub let sig_kill : Int32 = 9
 
 ///|
-pub let sig_int : Int = 2
+pub let sig_int : Int32 = 2
 
 ///|
-pub let sig_hup : Int = 1
+pub let sig_hup : Int32 = 1
 
 ///|
 /// Map a signal name from the process configuration to a number.
-pub fn signal_number(name : String) -> Int {
+pub fn signal_number(name : String) -> Int32 {
   match name.trim().to_upper().to_owned() {
     "SIGTERM" | "TERM" | "15" => sig_term
     "SIGKILL" | "KILL" | "9" => sig_kill
@@ -76,7 +76,7 @@ pub fn signal_number(name : String) -> Int {
 
 ///|
 /// Map a signal number back to its name, for the daemon log's exit line.
-pub fn signal_name(sig : Int) -> String {
+pub fn signal_name(sig : Int32) -> String {
   match sig {
     1 => "SIGHUP"
     2 => "SIGINT"
@@ -115,13 +115,13 @@ pub fn signal_name(sig : Int) -> String {
 
 ///|
 /// Whether `pid` is alive.
-pub fn pid_alive(pid : Int) -> Bool {
+pub fn pid_alive(pid : Int32) -> Bool {
   pid > 0 && pm3_pid_alive(pid) != 0
 }
 
 ///|
 /// Send a signal, ignoring failures.
-pub fn send_signal(pid : Int, sig : Int) -> Unit {
+pub fn send_signal(pid : Int32, sig : Int32) -> Unit {
   if pid > 0 {
     ignore(pm3_kill(pid, sig))
   }

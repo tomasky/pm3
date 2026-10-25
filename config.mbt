@@ -202,12 +202,12 @@ fn read_size_field(
 fn read_int_field(
   members : Map[String, Json],
   key : String,
-) -> Result[Int?, String] {
+) -> Result[Int32?, String] {
   match members.get(key) {
     None => Ok(None)
     Some(Json::Number(n, ..)) => Ok(Some(n.to_int()))
     Some(Json::String(text)) => {
-      let parsed : Int? = Some(@string.parse_int(text)) catch { _ => None }
+      let parsed : Int32? = Some(@string.parse_int(text)) catch { _ => None }
       match parsed {
         Some(value) => Ok(Some(value))
         None => Err("'" + key + "' must be an integer, got '" + text + "'")

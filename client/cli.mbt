@@ -4,7 +4,7 @@
 ///|
 /// `exit(3)`, so a command that failed can return a non-zero status the way
 /// PM2 does.
-extern "C" fn pm3_exit(status : Int) -> Unit = "pm3_exit"
+extern "C" fn pm3_exit(status : Int32) -> Unit = "pm3_exit"
 
 ///|
 /// Set by `print_error`: the command failed, so the process exits non-zero.
@@ -155,7 +155,11 @@ async fn cmd_list(args : Array[String]) -> Unit {
       @pm3.bold_cyan(app.pm_id.to_string()),
       fit_name_pm2(app.name),
       app.app_namespace,
-      if app.version.length() > 0 { app.version } else { "N/A" },
+      if app.version.length() > 0 {
+        app.version
+      } else {
+        "N/A"
+      },
       @pm3.bold_inverse("fork"),
       app.display_pid().to_string(),
       uptime,
@@ -164,7 +168,11 @@ async fn cmd_list(args : Array[String]) -> Unit {
       @pm3.format_cpu_percent(app.cpu),
       @pm3.format_size_pm2(app.memory),
       @pm3.style_bold(
-        if app.username.length() > 0 { app.username } else { "N/A" },
+        if app.username.length() > 0 {
+          app.username
+        } else {
+          "N/A"
+        },
       ),
       @pm3.style_gray("disabled"),
     ])
@@ -179,7 +187,10 @@ async fn cmd_list(args : Array[String]) -> Unit {
     @pm3.style_bold("total cpu") +
     " " +
     @pm3.colorized_metric(
-      total_cpu, 40.0, 70.0, @pm3.format_cpu_percent(total_cpu),
+      total_cpu,
+      40.0,
+      70.0,
+      @pm3.format_cpu_percent(total_cpu),
     ) +
     "   " +
     @pm3.style_bold("total mem") +
@@ -308,9 +319,9 @@ fn parse_start(args : Array[String]) -> Result[@pm3.Request, String] {
     }
     let needs_value = [
       "--name", "-n", "--namespace", "--interpreter", "-i", "--interpreter-args",
-      "--node-args", "--cwd", "--out-file", "--err-file", "--log-date-format",
-      "--max-restarts", "--restart-delay", "--min-uptime", "--max-memory-restart",
-      "--kill-timeout", "--kill-signal", "--stop-exit-codes", "--env", "-e",
+      "--node-args", "--cwd", "--out-file", "--err-file", "--log-date-format", "--max-restarts",
+      "--restart-delay", "--min-uptime", "--max-memory-restart", "--kill-timeout",
+      "--kill-signal", "--stop-exit-codes", "--env", "-e",
     ]
     if needs_value.contains(arg) {
       if i + 1 >= args.length() {
@@ -571,7 +582,7 @@ fn log_label(app : @pm3.App) -> String {
 ///|
 /// Pad (or cut) a label to `width` so log lines stay aligned, like PM2's
 /// `pad()`.
-fn pad_label(label : String, width : Int) -> String {
+fn pad_label(label : String, width : Int32) -> String {
   if label.length() >= width {
     label.view(start_offset=0, end_offset=width).to_owned()
   } else {
@@ -581,7 +592,7 @@ fn pad_label(label : String, width : Int) -> String {
 
 ///|
 /// The coloured `id|name | ` prefix a log line carries.
-fn log_prefix(kind : LogKind, label : String, width : Int) -> String {
+fn log_prefix(kind : LogKind, label : String, width : Int32) -> String {
   let text = pad_label(label, width) + " | "
   match kind {
     Out => @pm3.style_green(text)
@@ -697,7 +708,7 @@ fn byte_lines(bytes : Bytes) -> Array[BytesView] {
 ///
 /// Lines are written as the bytes they were, so a log that is not valid UTF-8
 /// still shows what the program wrote.
-async fn tail_log_file(file : LogFile, lines : Int, raw : Bool) -> Unit {
+async fn tail_log_file(file : LogFile, lines : Int32, raw : Bool) -> Unit {
   let exists = @fs.exists(file.path) catch { _ => false }
   if !exists {
     return
@@ -725,7 +736,7 @@ async fn tail_log_file(file : LogFile, lines : Int, raw : Bool) -> Unit {
 async fn write_log_line(
   file : LogFile,
   line : BytesView,
-  width : Int,
+  width : Int32,
   raw : Bool,
   timestamp : String?,
 ) -> Unit {
@@ -747,7 +758,8 @@ async fn write_log_line(
         @stdio.stdout.write(
           @pm3.style_dim(
             @pm3.style_gray(
-              @pm3.format_timestamp(now, @daemon.pm3_local_offset(now), fmt) + " ",
+              @pm3.format_timestamp(now, @daemon.pm3_local_offset(now), fmt) +
+              " ",
             ),
           ),
         )
@@ -766,7 +778,7 @@ async fn write_log_line(
 async fn stream_lines(
   file : LogFile,
   bytes : Bytes,
-  width : Int,
+  width : Int32,
   raw : Bool,
   timestamp : String?,
 ) -> Unit {
@@ -786,8 +798,8 @@ async fn stream_lines(
 
 ///|
 /// Index of the last `\n` in `bytes`, when there is one.
-fn last_newline(bytes : Bytes) -> Int? {
-  let mut index : Int? = None
+fn last_newline(bytes : Bytes) -> Int32? {
+  let mut index : Int32? = None
   for i in 0..<bytes.length() {
     if bytes[i] == b'\n' {
       index = Some(i)
@@ -810,7 +822,7 @@ fn last_newline(bytes : Bytes) -> Int? {
 /// follower resumes from the top of the emptied file.
 async fn follow_log_file(
   file : LogFile,
-  width : Int,
+  width : Int32,
   raw : Bool,
   timestamp : String?,
 ) -> Unit {
@@ -870,16 +882,12 @@ async fn follow_log_file(
     let fd_size = h.size()
     // The path naming a different size (or a different modification time for
     // the same size) means the path now refers to another file: a rotation.
-    let path_size = @fs.file_size(file.path) catch {
-      _ => continue
-    }
+    let path_size = @fs.file_size(file.path) catch { _ => continue }
     let rotated = if fd_size != path_size {
       true
     } else {
       let fd_mtime = h.mtime()
-      let path_mtime = @fs.mtime(file.path) catch {
-        _ => continue
-      }
+      let path_mtime = @fs.mtime(file.path) catch { _ => continue }
       fd_mtime.0 != path_mtime.0 || fd_mtime.1 != path_mtime.1
     }
     if fd_size < offset {
@@ -1285,7 +1293,7 @@ async fn print_help() -> Unit {
 ///|
 /// The longest left column over several help groups, so `pm3 --help` aligns
 /// options and commands on the same column the way commander does.
-fn help_width(groups : Array[Array[(String, String)]]) -> Int {
+fn help_width(groups : Array[Array[(String, String)]]) -> Int32 {
   let mut width = 0
   for group in groups {
     for entry in group {
@@ -1303,7 +1311,7 @@ fn help_width(groups : Array[Array[(String, String)]]) -> Int {
 /// padded to `width`, two spaces, the description.
 fn render_help_entries(
   entries : Array[(String, String)],
-  width : Int,
+  width : Int32,
 ) -> String {
   let buf = StringBuilder()
   for entry in entries {

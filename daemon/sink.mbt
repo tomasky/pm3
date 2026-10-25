@@ -29,14 +29,14 @@ pub struct LogSink {
   /// Set by `pm3 reloadLogs` / the cron trigger; acted on by the next write.
   mut rotate_requested : Bool
   /// Cached UTC offset for file names, refreshed by the rotation runner.
-  mut tz_offset : Int
+  mut tz_offset : Int32
   /// Wall-clock time of the last retention pass, to throttle pruning after a
   /// burst of rotations.
   mut last_prune_ms : Int64
   /// Rotations performed since the last retention pass. Pruning right after a
   /// few of them keeps the on-disk file count bounded even when a log rotates
   /// far faster than the runner's pass.
-  mut rotations_since_prune : Int
+  mut rotations_since_prune : Int32
   /// Set for the daemon's own log: the daemon writes it through the stderr
   /// the client opened, so a rotation must move that descriptor too.
   redirect_stderr : Bool
@@ -154,7 +154,7 @@ async fn LogSink::open_live(self : LogSink) -> Unit {
 /// it repeats for every chunk until the file accepts data again.
 pub async fn LogSink::note_write_failure(
   self : LogSink,
-  bytes : Int,
+  bytes : Int32,
   reason : String,
 ) -> Unit {
   self.dropped_bytes = self.dropped_bytes + bytes.to_int64()
@@ -238,9 +238,7 @@ pub async fn LogSink::maybe_rotate(self : LogSink) -> Unit {
     // The daemon's own log grows through the inherited stderr, not through
     // this sink, so the tracked size would stay stale; the file is the
     // source of truth.
-    self.size = @fs.file_size(self.path) catch {
-      _ => self.size
-    }
+    self.size = @fs.file_size(self.path) catch { _ => self.size }
   }
   if self.rotate_requested || @pm3.rotation_due(self.size, self.config) {
     self.do_rotate()

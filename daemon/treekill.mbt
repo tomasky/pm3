@@ -20,8 +20,8 @@
 /// `start` is field 22, `starttime`, in clock ticks since boot: together with
 /// the pid it names one process for the lifetime of the machine.
 pub(all) struct ProcStat {
-  pid : Int
-  ppid : Int
+  pid : Int32
+  ppid : Int32
   /// Field 3, the scheduler state. `Z` is a zombie: it has exited and only
   /// waits to be reaped, so it holds no port, descriptor or memory worth
   /// killing.
@@ -29,8 +29,10 @@ pub(all) struct ProcStat {
   start : Int64
 } derive(Eq, Debug)
 
+///|
 pub extend ProcStat with Eq::{not_equal, equal}
 
+///|
 pub extend ProcStat with Debug::{to_repr}
 
 ///|
@@ -40,7 +42,7 @@ pub extend ProcStat with Debug::{to_repr}
 /// contain spaces and parentheses, so the fields are counted from the last
 /// `)`. Field N of the record is index N - 3 of what follows, because the
 /// remainder starts at field 3 (`state`).
-pub fn parse_proc_stat(text : String, pid : Int) -> ProcStat? {
+pub fn parse_proc_stat(text : String, pid : Int32) -> ProcStat? {
   let close = match text.rev_find(")") {
     Some(index) => index
     None => return None
@@ -68,13 +70,13 @@ pub fn parse_proc_stat(text : String, pid : Int) -> ProcStat? {
     Some(value) => value
     None => return None
   }
-  Some({ pid, ppid, state, start })
+  Some({ pid, ppid, state, start, })
 }
 
 ///|
 /// Read the identity of `pid`, or `None` when it is gone or `/proc` is not
 /// mounted.
-async fn read_proc_stat(pid : Int) -> ProcStat? {
+async fn read_proc_stat(pid : Int32) -> ProcStat? {
   if pid <= 0 {
     return None
   }
@@ -89,7 +91,7 @@ async fn read_proc_stat(pid : Int) -> ProcStat? {
 /// exited: it holds no port, descriptor or memory, and signalling it does
 /// nothing. `/proc/<pid>/stat` keeps listing it until its parent reaps it,
 /// which in a container whose PID 1 does not reap can be forever.
-pub async fn pid_is_running(pid : Int) -> Bool {
+pub async fn pid_is_running(pid : Int32) -> Bool {
   match read_proc_stat(pid) {
     Some(stat) => stat.state != 'Z'
     None => false
@@ -101,7 +103,7 @@ pub async fn pid_is_running(pid : Int) -> Bool {
 /// `start`. An entry recorded without a start time (an old dump, or a host
 /// with no `/proc`) cannot be verified and answers `false`: never signal a pid
 /// whose owner cannot be proven.
-async fn pid_is(pid : Int, start : Int64) -> Bool {
+async fn pid_is(pid : Int32, start : Int64) -> Bool {
   if pid <= 0 || start <= 0L {
     return false
   }
@@ -135,13 +137,13 @@ async fn warn_no_proc() -> Unit {
 /// `None` means the tree cannot be walked at all (no `/proc`). A root that has
 /// already exited comes back as one entry with no start time: it cannot be
 /// verified any more, so nothing signals it.
-pub async fn snapshot_tree(root : Int) -> Array[ProcStat]? {
+pub async fn snapshot_tree(root : Int32) -> Array[ProcStat]? {
   if root <= 0 {
     return Some([])
   }
   let names = @fs.readdir("/proc") catch { _ => return None }
-  let children : Map[Int, Array[Int]] = Map([])
-  let stats : Map[Int, ProcStat] = Map([])
+  let children : Map[Int32, Array[Int32]] = Map([])
+  let stats : Map[Int32, ProcStat] = Map([])
   for name in names {
     let pid = match @pm3.parse_non_negative_int(name.view()) {
       Some(pid) => pid
@@ -159,9 +161,9 @@ pub async fn snapshot_tree(root : Int) -> Array[ProcStat]? {
   }
   // Post-order walk: a node is appended only after every child was pushed, so
   // children always come before their parent in the result.
-  let order : Array[Int] = []
-  let seen : Array[Int] = []
-  let stack : Array[(Int, Bool)] = [(root, false)]
+  let order : Array[Int32] = []
+  let seen : Array[Int32] = []
+  let stack : Array[(Int32, Bool)] = [(root, false)]
   while order.length() < 65536 {
     let next = stack.pop()
     match next {
@@ -188,7 +190,7 @@ pub async fn snapshot_tree(root : Int) -> Array[ProcStat]? {
       Some(stat) => tree.push(stat)
       // The root may already be gone; a synthetic entry with no start time is
       // then harmless: it cannot be verified, so it is never signalled.
-      None => tree.push({ pid, ppid: 0, state: '?', start: 0L })
+      None => tree.push({ pid, ppid: 0, state: '?', start: 0L, })
     }
   }
   Some(tree)
@@ -197,7 +199,7 @@ pub async fn snapshot_tree(root : Int) -> Array[ProcStat]? {
 ///|
 /// Signal the members of `tree` that are still the processes they were
 /// snapshotted as. Returns how many were signalled.
-pub async fn signal_members(tree : Array[ProcStat], sig : Int) -> Int {
+pub async fn signal_members(tree : Array[ProcStat], sig : Int32) -> Int32 {
   let mut signalled = 0
   for entry in tree {
     // No recorded identity means the pid may already belong to someone else;
@@ -225,7 +227,7 @@ pub async fn signal_members(tree : Array[ProcStat], sig : Int) -> Int {
 /// SIGKILL is for.
 pub async fn wait_members_gone(
   tree : Array[ProcStat],
-  timeout_ms : Int,
+  timeout_ms : Int32,
 ) -> Bool {
   let mut waited = 0
   while true {
@@ -285,7 +287,7 @@ pub fn merge_trees(
 ///|
 /// Send `sig` to `root` and every descendant. Returns how many processes were
 /// signalled; `0` when the root is already gone.
-pub async fn kill_tree(root : Int, sig : Int) -> Int {
+pub async fn kill_tree(root : Int32, sig : Int32) -> Int32 {
   match snapshot_tree(root) {
     None => {
       warn_no_proc()

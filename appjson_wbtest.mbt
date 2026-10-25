@@ -67,8 +67,12 @@ test "app_records_from_json rejects what it cannot read" {
 /// directory cannot change what a saved record means.
 test "resolve_start_path follows PM2's CLI rules" {
   let base = "/tmp/pm3-resolve-start-path"
-  @fs.create_dir(base) catch { _ => () }
-  @fs.write_string_to_file(base + "/app.js", "// x") catch { _ => () }
+  @fs.create_dir(base) catch {
+    _ => ()
+  }
+  @fs.write_string_to_file(base + "/app.js", "// x") catch {
+    _ => ()
+  }
   // A file argument becomes absolute and records the CLI's directory as cwd.
   assert_eq(
     resolve_start_path("app.js", None, base),

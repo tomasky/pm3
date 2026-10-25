@@ -211,8 +211,10 @@ pub(all) enum TsSupport {
   Unsupported
 } derive(Eq, Debug)
 
+///|
 pub extend TsSupport with Eq::{not_equal, equal}
 
+///|
 pub extend TsSupport with Debug::{to_repr}
 
 ///|
@@ -251,7 +253,7 @@ pub fn type_strip_support(version : String) -> TsSupport {
 ///|
 /// `(major, minor)` of a `node --version` answer such as `v22.18.0` or
 /// `v23.6.0-rc.1`. A `v` prefix is optional.
-fn parse_node_version(version : String) -> (Int, Int)? {
+fn parse_node_version(version : String) -> (Int32, Int32)? {
   let text = version.trim().to_owned()
   let digits = if text.has_prefix("v") || text.has_prefix("V") {
     text.view(start_offset=1, end_offset=text.length())

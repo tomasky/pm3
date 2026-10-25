@@ -6,7 +6,7 @@
 ///|
 /// Parse a fixed UTC offset such as `UTC+8`, `GMT-5`, `+05:30` or `-0800`.
 /// Returns `None` for named zones (e.g. `America/New_York`).
-pub fn parse_fixed_tz(tz : String) -> Int? {
+pub fn parse_fixed_tz(tz : String) -> Int32? {
   let mut body = tz.trim().to_owned()
   let upper = body.to_upper()
   if upper.has_prefix("UTC") {
@@ -66,7 +66,7 @@ pub fn parse_fixed_tz(tz : String) -> Int? {
 ///|
 /// Resolve the UTC offset for file names. Named zones are delegated to
 /// `date +%z`, which reads the system tz database.
-pub async fn resolve_tz_offset(tz : String, epoch_secs : Int64) -> Int {
+pub async fn resolve_tz_offset(tz : String, epoch_secs : Int64) -> Int32 {
   if tz.length() == 0 {
     return pm3_local_offset(epoch_secs)
   }
@@ -118,7 +118,7 @@ fn first_integer(text : StringView) -> Int64? {
 }
 
 ///|
-fn parse_int64_range(text : StringView, start : Int, end : Int) -> Int64? {
+fn parse_int64_range(text : StringView, start : Int32, end : Int32) -> Int64? {
   let mut value = 0L
   for i in start..<end {
     match text.get_char(i) {
@@ -131,7 +131,7 @@ fn parse_int64_range(text : StringView, start : Int, end : Int) -> Int64? {
 
 ///|
 /// Resident set size in bytes, read from `/proc/<pid>/status`.
-pub async fn read_rss_bytes(pid : Int) -> Int64 {
+pub async fn read_rss_bytes(pid : Int32) -> Int64 {
   let path = "/proc/\{pid}/status"
   let text = @fs.read_file(path).text() catch { _ => return 0L }
   for line in text.split("\n") {
@@ -147,7 +147,7 @@ pub async fn read_rss_bytes(pid : Int) -> Int64 {
 
 ///|
 /// `(utime + stime)` in clock ticks, read from `/proc/<pid>/stat`.
-pub async fn read_cpu_ticks(pid : Int) -> Int64 {
+pub async fn read_cpu_ticks(pid : Int32) -> Int64 {
   let path = "/proc/\{pid}/stat"
   let text = @fs.read_file(path).text() catch { _ => return 0L }
   let close = match text.rev_find(")") {
@@ -238,14 +238,10 @@ pub async fn run_logrotate_loop(state : DaemonState) -> Unit {
       // A sink the daemon cannot rotate or prune (a full disk, a permission
       // problem) must not take this loop — and with it every other app's
       // rotation and retention — down.
-      try {
-        sink.maybe_rotate()
-      } catch {
+      sink.maybe_rotate() catch {
         e => sink.note_rotation_failure("\{e}")
       }
-      try {
-        sink.prune(now * 1_000_000_000L)
-      } catch {
+      sink.prune(now * 1_000_000_000L) catch {
         e => sink.note_rotation_failure("\{e}")
       }
     }
@@ -305,7 +301,7 @@ async fn compress_file(path : String) -> Unit {
 ///|
 /// How often the resource monitor samples CPU and memory, in milliseconds.
 /// The startup banner reports it as PM2 reports its own worker interval.
-let monitor_interval_ms : Int = 2000
+let monitor_interval_ms : Int32 = 2000
 
 ///|
 /// The resource monitor: keeps `memory`/`cpu` fresh and enforces

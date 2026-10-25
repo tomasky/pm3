@@ -8,7 +8,7 @@
 
 ///|
 /// Days since 1970-01-01 for a civil date (Howard Hinnant's algorithm).
-pub fn days_from_civil(year : Int, month : Int, day : Int) -> Int {
+pub fn days_from_civil(year : Int32, month : Int32, day : Int32) -> Int32 {
   let y = if month <= 2 { year - 1 } else { year }
   let era = (if y >= 0 { y } else { y - 399 }) / 400
   let yoe = y - era * 400
@@ -20,7 +20,7 @@ pub fn days_from_civil(year : Int, month : Int, day : Int) -> Int {
 
 ///|
 /// Civil date `(year, month, day)` for a number of days since 1970-01-01.
-pub fn civil_from_days(days : Int) -> (Int, Int, Int) {
+pub fn civil_from_days(days : Int32) -> (Int32, Int32, Int32) {
   let z = days + 719468
   let era = (if z >= 0 { z } else { z - 146096 }) / 146097
   let doe = z - era * 146097
@@ -35,7 +35,7 @@ pub fn civil_from_days(days : Int) -> (Int, Int, Int) {
 
 ///|
 /// Day of week for a number of days since 1970-01-01 (0 = Sunday).
-pub fn weekday_from_days(days : Int) -> Int {
+pub fn weekday_from_days(days : Int32) -> Int32 {
   (days % 7 + 4 + 7) % 7
 }
 
@@ -43,7 +43,7 @@ pub fn weekday_from_days(days : Int) -> Int {
 /// Split a local Unix second into its calendar/clock fields.
 pub fn split_timestamp(
   local_secs : Int64,
-) -> (Int, Int, Int, Int, Int, Int, Int) {
+) -> (Int32, Int32, Int32, Int32, Int32, Int32, Int32) {
   let days = (local_secs / 86400L).to_int()
   let sod = (local_secs % 86400L).to_int()
   let (y, mo, d) = civil_from_days(days)
@@ -58,16 +58,16 @@ pub fn split_timestamp(
 /// and the token length, or `None` when no token starts here.
 fn render_token(
   fmt : StringView,
-  pos : Int,
-  year : Int,
-  month : Int,
-  day : Int,
-  hour : Int,
-  minute : Int,
-  second : Int,
-  weekday : Int,
-  offset_secs : Int,
-) -> (String, Int)? {
+  pos : Int32,
+  year : Int32,
+  month : Int32,
+  day : Int32,
+  hour : Int32,
+  minute : Int32,
+  second : Int32,
+  weekday : Int32,
+  offset_secs : Int32,
+) -> (String, Int32)? {
   let rest = fmt.view(start_offset=pos, end_offset=fmt.length())
   let abs_offset = if offset_secs < 0 { -offset_secs } else { offset_secs }
   let offset_sign = if offset_secs < 0 { "-" } else { "+" }
@@ -110,8 +110,7 @@ let weekday_names : Array[String] = [
 ///|
 /// Short month names, indexed by month number minus one.
 let month_names : Array[String] = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-  "Nov", "Dec",
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ]
 
 ///|
@@ -121,11 +120,13 @@ let month_names : Array[String] = [
 /// dayjs.
 pub fn format_timestamp(
   epoch_secs : Int64,
-  offset_secs : Int,
+  offset_secs : Int32,
   fmt : String,
 ) -> String {
   let local_secs = epoch_secs + offset_secs.to_int64()
-  let (year, month, day, hour, minute, second, days) = split_timestamp(local_secs)
+  let (year, month, day, hour, minute, second, days) = split_timestamp(
+    local_secs,
+  )
   let weekday = weekday_from_days(days)
   let out = StringBuilder()
   let mut i = 0
@@ -142,9 +143,10 @@ pub fn format_timestamp(
       i = if j < fmt.length() { j + 1 } else { j }
       continue
     }
-    match render_token(
-      fmt, i, year, month, day, hour, minute, second, weekday, offset_secs,
-    ) {
+    match
+      render_token(
+        fmt, i, year, month, day, hour, minute, second, weekday, offset_secs,
+      ) {
       Some((text, len)) => {
         out.write_string(text)
         i = i + len

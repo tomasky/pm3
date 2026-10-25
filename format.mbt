@@ -3,7 +3,7 @@
 
 ///|
 /// Right-pad `text` with `pad` until it is at least `width` characters wide.
-pub fn pad_right(text : String, width : Int, pad : Char) -> String {
+pub fn pad_right(text : String, width : Int32, pad : Char) -> String {
   if text.length() >= width {
     return text
   }
@@ -17,13 +17,13 @@ pub fn pad_right(text : String, width : Int, pad : Char) -> String {
 
 ///|
 /// Left-pad `text` with `pad` until it is at least `width` characters wide.
-pub fn pad_left_text(text : String, width : Int, pad : Char) -> String {
+pub fn pad_left_text(text : String, width : Int32, pad : Char) -> String {
   pad_left(text, width, pad)
 }
 
 ///|
 /// Shorten `text` to at most `width` characters, appending an ellipsis.
-pub fn truncate_text(text : String, width : Int) -> String {
+pub fn truncate_text(text : String, width : Int32) -> String {
   if text.length() <= width {
     return text
   }
@@ -166,7 +166,7 @@ pub fn render_box(
   }
   // Content width per column: the widest cell. The borders add one space on
   // each side, so a rendered cell is `width + 2` columns wide.
-  let widths : Array[Int] = []
+  let widths : Array[Int32] = []
   for _ in 0..<columns {
     widths.push(0)
   }

@@ -25,7 +25,7 @@ fn daemon_log_format() -> String {
 /// the format is empty (PM2 then writes the bare message).
 fn daemon_log_stamp(
   epoch_secs : Int64,
-  offset_secs : Int,
+  offset_secs : Int32,
   fmt : String,
 ) -> String {
   if fmt.is_empty() {
@@ -39,7 +39,7 @@ fn daemon_log_stamp(
 /// `<time>: PM3 log: <message>`.
 fn daemon_line(
   epoch_secs : Int64,
-  offset_secs : Int,
+  offset_secs : Int32,
   fmt : String,
   msg : String,
 ) -> String {
@@ -88,7 +88,7 @@ fn daemon_arch() -> String {
 /// the two IPC socket paths collapse into pm3's single port file.
 fn daemon_banner_lines(
   epoch_secs : Int64,
-  offset_secs : Int,
+  offset_secs : Int32,
   exe : String,
 ) -> Array[String] {
   let sep = "==============================================================================="

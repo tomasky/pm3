@@ -139,7 +139,7 @@ test "parse_proc_stat reads ppid and starttime past a parenthesised name" {
   let text = "999 (my (weird) proc) R 42 999 999 0 -1 4194560 100 0 0 0 7 8 0 0 20 0 3 0 123456 0 0"
   assert_eq(
     @daemon.parse_proc_stat(text, 999),
-    Some({ pid: 999, ppid: 42, state: 'R', start: 123456L }),
+    Some({ pid: 999, ppid: 42, state: 'R', start: 123456L, }),
   )
   assert_eq(@daemon.parse_proc_stat("garbage", 1), None)
   assert_eq(@daemon.parse_proc_stat("1 (short) R 2", 1), None)
@@ -150,12 +150,12 @@ test "parse_proc_stat reads ppid and starttime past a parenthesised name" {
 /// children that only the second one saw.
 test "merge_trees keeps the earliest identity per pid" {
   let first : Array[@daemon.ProcStat] = [
-    { pid: 10, ppid: 1, state: 'S', start: 100L },
-    { pid: 11, ppid: 10, state: 'S', start: 101L },
+    { pid: 10, ppid: 1, state: 'S', start: 100L, },
+    { pid: 11, ppid: 10, state: 'S', start: 101L, },
   ]
   let second : Array[@daemon.ProcStat] = [
-    { pid: 10, ppid: 1, state: 'S', start: 900L },
-    { pid: 12, ppid: 10, state: 'S', start: 102L },
+    { pid: 10, ppid: 1, state: 'S', start: 900L, },
+    { pid: 12, ppid: 10, state: 'S', start: 102L, },
   ]
   let merged = @daemon.merge_trees(first, second)
   assert_eq(merged.length(), 3)
@@ -188,7 +188,9 @@ async test "snapshot_tree lists the whole tree, children before the root" {
 async test "signal_members refuses a pid whose starttime does not match" {
   let pid = @process.spawn_orphan("sleep", ["30"])
   @async.sleep(300)
-  let stale : Array[@daemon.ProcStat] = [{ pid, ppid: 0, state: 'S', start: 1L }]
+  let stale : Array[@daemon.ProcStat] = [
+    { pid, ppid: 0, state: 'S', start: 1L, },
+  ]
   assert_eq(@daemon.signal_members(stale, @daemon.sig_kill), 0)
   assert_true(@daemon.pid_alive(pid))
   ignore(@daemon.kill_tree(pid, @daemon.sig_kill))
@@ -246,8 +248,7 @@ async test ".ts resolves to bun or to node's type stripping" {
     }
     Err(message) =>
       assert_eq(
-        message,
-        "TypeScript apps require bun, Node.js >= 22.18 (native type stripping) or a custom interpreter (e.g. --interpreter ts-node)",
+        message, "TypeScript apps require bun, Node.js >= 22.18 (native type stripping) or a custom interpreter (e.g. --interpreter ts-node)",
       )
   }
   @fs.remove(path) catch {

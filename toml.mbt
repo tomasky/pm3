@@ -21,9 +21,9 @@ priv suberror TomlError {
 /// so a nested table written into the tree stays linked to the tree.
 priv struct TomlParser {
   src : String
-  len : Int
-  mut pos : Int
-  mut line : Int
+  len : Int32
+  mut pos : Int32
+  mut line : Int32
   root : Map[String, Json]
   mut table : Map[String, Json]
 }
@@ -55,7 +55,7 @@ fn TomlParser::peek(self : TomlParser) -> Char? {
 }
 
 ///|
-fn TomlParser::peek_at(self : TomlParser, offset : Int) -> Char? {
+fn TomlParser::peek_at(self : TomlParser, offset : Int32) -> Char? {
   self.src.get_char(self.pos + offset)
 }
 
@@ -203,7 +203,7 @@ fn TomlParser::parse_key_path(
 // ---------------------------------------------------------------------------
 
 ///|
-fn hex_value(c : Char) -> Int? {
+fn hex_value(c : Char) -> Int32? {
   let n = c.to_int()
   if n >= 48 && n <= 57 {
     Some(n - 48)
@@ -222,7 +222,7 @@ fn hex_value(c : Char) -> Int? {
 fn TomlParser::write_unicode_escape(
   self : TomlParser,
   buf : StringBuilder,
-  digits : Int,
+  digits : Int32,
 ) -> Unit raise TomlError {
   self.bump() // 'u' or 'U'
   let mut code = 0
@@ -656,7 +656,7 @@ fn TomlParser::descend(
   self : TomlParser,
   base : Map[String, Json],
   path : Array[String],
-  count : Int,
+  count : Int32,
 ) -> Map[String, Json] raise TomlError {
   let mut target = base
   for i in 0..<count {

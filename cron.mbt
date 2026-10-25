@@ -19,19 +19,19 @@
 ///|
 /// Parsed cron schedule. Fields are sorted ascending and de-duplicated.
 pub struct CronSpec {
-  seconds : Array[Int]
-  minutes : Array[Int]
-  hours : Array[Int]
-  days_of_month : Array[Int]
-  months : Array[Int]
-  days_of_week : Array[Int]
+  seconds : Array[Int32]
+  minutes : Array[Int32]
+  hours : Array[Int32]
+  days_of_month : Array[Int32]
+  months : Array[Int32]
+  days_of_week : Array[Int32]
   seconds_restricted : Bool
   dom_restricted : Bool
   dow_restricted : Bool
 } derive(Eq, Debug)
 
 ///|
-fn cron_name_table(kind : Int) -> Array[String] {
+fn cron_name_table(kind : Int32) -> Array[String] {
   if kind == 0 {
     [
       "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV",
@@ -45,7 +45,7 @@ fn cron_name_table(kind : Int) -> Array[String] {
 ///|
 /// Resolve a numeric or symbolic cron value. `kind` selects the month (0) or
 /// weekday (1) name table.
-fn cron_atom(text : StringView, kind : Int) -> Int? {
+fn cron_atom(text : StringView, kind : Int32) -> Int32? {
   let t = text.trim()
   if t.length() == 0 {
     return None
@@ -70,16 +70,16 @@ fn cron_atom(text : StringView, kind : Int) -> Int? {
 /// Returns the values plus whether the field was restricted (i.e. not `*`).
 fn parse_cron_field(
   field : StringView,
-  min_value : Int,
-  max_value : Int,
-  kind : Int,
-) -> (Array[Int], Bool)? {
+  min_value : Int32,
+  max_value : Int32,
+  kind : Int32,
+) -> (Array[Int32], Bool)? {
   let raw = field.trim()
   if raw.length() == 0 {
     return None
   }
   let restricted = !(raw.length() == 1 && raw.get_char(0) is Some('*'))
-  let values : Array[Int] = []
+  let values : Array[Int32] = []
   for part in raw.split(",") {
     let item = part.trim()
     if item.length() == 0 {
@@ -230,7 +230,7 @@ pub fn cron_matches(spec : CronSpec, local_secs : Int64) -> Bool {
 
 ///|
 /// Smallest value in `values` that is strictly greater than `after`.
-fn first_greater(values : Array[Int], after : Int) -> Int? {
+fn first_greater(values : Array[Int32], after : Int32) -> Int32? {
   for v in values {
     if v > after {
       return Some(v)
@@ -248,7 +248,7 @@ fn first_greater(values : Array[Int], after : Int) -> Int? {
 pub fn next_cron_fire(
   spec : CronSpec,
   from_secs : Int64,
-  offset_secs : Int,
+  offset_secs : Int32,
 ) -> Int64? {
   // Start at the minute that contains `from_secs`, then look for a second
   // inside it that is strictly after `from_secs`.

@@ -42,11 +42,10 @@
 /// as-is.
 pub fn app_field_names() -> Array[String] {
   [
-    "name", "script", "args", "namespace", "interpreter", "exec_interpreter",
-    "interpreter_args", "interpreterArgs", "node_args", "cwd", "env", "autorestart",
-    "max_restarts", "restart_delay", "min_uptime", "max_memory_restart", "kill_timeout",
-    "kill_signal", "stop_exit_codes", "merge_logs", "out_log", "err_log",
-    "log_date_format",
+    "name", "script", "args", "namespace", "interpreter", "exec_interpreter", "interpreter_args",
+    "interpreterArgs", "node_args", "cwd", "env", "autorestart", "max_restarts",
+    "restart_delay", "min_uptime", "max_memory_restart", "kill_timeout", "kill_signal",
+    "stop_exit_codes", "merge_logs", "out_log", "err_log", "log_date_format",
   ]
 }
 
@@ -75,16 +74,16 @@ fn read_string_array_field(
 fn read_int_array_field(
   members : Map[String, Json],
   key : String,
-) -> Result[Array[Int]?, String] {
+) -> Result[Array[Int32]?, String] {
   match members.get(key) {
     None => Ok(None)
     Some(Json::Array(items)) => {
-      let out : Array[Int] = []
+      let out : Array[Int32] = []
       for item in items {
         match item {
           Json::Number(n, ..) => out.push(n.to_int())
           Json::String(text) => {
-            let parsed : Int? = Some(@string.parse_int(text)) catch {
+            let parsed : Int32? = Some(@string.parse_int(text)) catch {
               _ => None
             }
             match parsed {
@@ -254,9 +253,7 @@ fn app_from_table(
     script_set = true
   })
   apply_field(read_string_array_field(members, "args"), v => app.args = v)
-  apply_field(read_text_field(members, "namespace"), v => {
-    app.app_namespace = v
-  })
+  apply_field(read_text_field(members, "namespace"), v => app.app_namespace = v)
   apply_field(
     read_aliased_text_field(members, ["interpreter", "exec_interpreter"]),
     v => app.interpreter = v,
@@ -362,9 +359,7 @@ fn read_app_defaults(members : Map[String, Json]) -> App raise ConfigError {
     }
   }
   apply_field(read_string_array_field(table, "args"), v => app.args = v)
-  apply_field(read_text_field(table, "namespace"), v => {
-    app.app_namespace = v
-  })
+  apply_field(read_text_field(table, "namespace"), v => app.app_namespace = v)
   apply_field(
     read_aliased_text_field(table, ["interpreter", "exec_interpreter"]),
     v => app.interpreter = v,

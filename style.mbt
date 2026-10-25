@@ -12,11 +12,11 @@
 
 ///|
 /// `isatty(3)` from the C library.
-pub extern "C" fn pm3_isatty(fd : Int) -> Int = "pm3_isatty"
+pub extern "C" fn pm3_isatty(fd : Int32) -> Int32 = "pm3_isatty"
 
 ///|
 /// Cached `colors_enabled()` answer: `-1` until computed, then `0` or `1`.
-let colors_cache : Ref[Int] = Ref(-1)
+let colors_cache : Ref[Int32] = Ref(-1)
 
 ///|
 /// Enable or disable styling for the rest of this process.
@@ -190,7 +190,7 @@ pub fn colorized_metric(
 ///|
 /// The length of `text` as it appears on a terminal: ANSI escape sequences
 /// contribute nothing.
-pub fn visible_width(text : String) -> Int {
+pub fn visible_width(text : String) -> Int32 {
   let mut width = 0
   let mut i = 0
   let length = text.length()
@@ -229,7 +229,7 @@ pub fn visible_width(text : String) -> Int {
 /// Pad `text` on the right with spaces until it is `width` terminal columns
 /// wide. Unlike `pad_right`, ANSI escape sequences in `text` are not counted,
 /// which is what lets `render_box` lay out pre-coloured cells.
-pub fn pad_visible(text : String, width : Int, pad : Char) -> String {
+pub fn pad_visible(text : String, width : Int32, pad : Char) -> String {
   let visible = visible_width(text)
   if visible >= width {
     return text

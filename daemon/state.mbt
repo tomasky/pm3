@@ -18,8 +18,8 @@ pub struct Managed {
 ///|
 /// Everything the daemon knows.
 pub struct DaemonState {
-  mut apps : Map[Int, Managed]
-  mut next_id : Int
+  mut apps : Map[Int32, Managed]
+  mut next_id : Int32
   /// Cleared by `pm3 kill`; the accept loop then returns and the daemon exits.
   mut running : Bool
   /// Rotation policy. Never reassigned, only mutated in place so that sinks
@@ -31,7 +31,7 @@ pub struct DaemonState {
   sinks : Map[String, LogSink]
   /// Rotated files waiting to be gzipped.
   compress_queue : @async.Queue[String]
-  mut port : Int
+  mut port : Int32
 }
 
 ///|
@@ -54,7 +54,7 @@ pub fn DaemonState::new(
 
 ///|
 /// Look up a managed app by its pm_id.
-pub fn DaemonState::get(self : DaemonState, id : Int) -> Managed? {
+pub fn DaemonState::get(self : DaemonState, id : Int32) -> Managed? {
   self.apps.get(id)
 }
 
@@ -89,7 +89,7 @@ pub fn DaemonState::ordered(self : DaemonState) -> Array[Managed] {
 pub async fn DaemonState::sink_for(
   self : DaemonState,
   path : String,
-  redirect_stderr? : Bool = false,
+  redirect_stderr~ : Bool = false,
 ) -> LogSink {
   // A stream the user silenced (`--out-file /dev/null`): there is nothing to
   // write, and rotating it would replace the device node with a regular file.
@@ -100,7 +100,12 @@ pub async fn DaemonState::sink_for(
   match self.sinks.get(path) {
     Some(sink) => sink
     None => {
-      let sink = LogSink::open(path, self.config, self.compress_queue, redirect_stderr)
+      let sink = LogSink::open(
+        path,
+        self.config,
+        self.compress_queue,
+        redirect_stderr,
+      )
       self.sinks.set(path, sink)
       sink
     }
@@ -126,7 +131,7 @@ pub fn DaemonState::add(self : DaemonState, app : @pm3.App) -> Managed {
 
 ///|
 /// Remove an app from the table.
-pub fn DaemonState::remove(self : DaemonState, id : Int) -> Unit {
+pub fn DaemonState::remove(self : DaemonState, id : Int32) -> Unit {
   self.apps.remove(id)
 }
 
