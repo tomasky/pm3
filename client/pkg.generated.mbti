@@ -11,6 +11,8 @@ pub async fn call(@pm3.Request) -> @pm3.Response
 
 pub async fn main_cli() -> Unit
 
+pub fn pm3_exit(Int32) -> Unit
+
 pub async fn reachable_daemon(Array[@daemon.DaemonProc], Int32?) -> Int32?
 
 pub async fn start_daemon() -> Unit

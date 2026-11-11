@@ -1,6 +1,7 @@
 import {
   "kupas/pm3/client",
   "moonbitlang/async",
+  "moonbitlang/async/stdio",
 }
 
 supported_targets = "+native"

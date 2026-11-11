@@ -4,7 +4,7 @@
 ///|
 /// `exit(3)`, so a command that failed can return a non-zero status the way
 /// PM2 does.
-extern "C" fn pm3_exit(status : Int32) -> Unit = "pm3_exit"
+pub extern "C" fn pm3_exit(status : Int32) -> Unit = "pm3_exit"
 
 ///|
 /// Set by `print_error`: the command failed, so the process exits non-zero.

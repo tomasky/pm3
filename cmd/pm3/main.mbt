@@ -3,10 +3,19 @@
 
 ///|
 async fn main {
-  // The client reports user-facing errors itself; anything that escapes is
-  // either an already-reported failure or a closed output pipe (for example
-  // `pm3 logs | head`), neither of which deserves a stack-trace-like dump.
+  // The client reports user-facing errors itself, so what escapes here is
+  // either a closed output pipe (`pm3 logs | head`) or a bug. Swallowing both —
+  // which this used to do — makes a crashing command look like a command that
+  // did nothing and succeeded, the worst answer a process manager can give.
   @client.main_cli() catch {
-    _ => ()
+    error => {
+      let message = error.to_string()
+      // A closed pipe is the user's terminal closing, not a fault.
+      if message.contains("Broken pipe") || message.contains("EPIPE") {
+        return
+      }
+      @stdio.stderr.write("pm3: unexpected failure: \{message}\n")
+      @client.pm3_exit(2)
+    }
   }
 }
