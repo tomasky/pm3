@@ -243,8 +243,7 @@ async test ".ts resolves to bun or to node's type stripping" {
       // "/usr/bin/node" or "/root/.bun/bin/bun"), not just the command
       // name, so check the path ends with the expected runtime name.
       assert_true(
-        app.interpreter.has_suffix("node") ||
-        app.interpreter.has_suffix("bun"),
+        app.interpreter.has_suffix("node") || app.interpreter.has_suffix("bun"),
       )
       // Only a node between 22.6 and 22.18 needs the flag.
       assert_true(app.interpreter_args.length() <= 1)

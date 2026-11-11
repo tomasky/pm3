@@ -8,13 +8,13 @@
 /// Return the directory part of `path` (everything before the last `/`).
 /// Returns `"."` when there is no separator.
 pub fn path_dirname(path : String) -> String {
-  let view = path.view()
+  let view = path.clamped_view()
   match view.rev_find("/") {
     Some(index) =>
       if index == 0 {
         "/"
       } else {
-        view.view(start_offset=0, end_offset=index).to_owned()
+        view.exact_view(start=0, end=index).to_owned()
       }
     None => "."
   }
@@ -23,10 +23,10 @@ pub fn path_dirname(path : String) -> String {
 ///|
 /// Return the final component of `path`.
 pub fn path_basename(path : String) -> String {
-  let view = path.view()
+  let view = path.clamped_view()
   match view.rev_find("/") {
     Some(index) =>
-      view.view(start_offset=index + 1, end_offset=view.length()).to_owned()
+      view.exact_view(start=index + 1, end=view.length()).to_owned()
     None => path
   }
 }
@@ -37,7 +37,7 @@ pub fn path_join(left : String, right : String) -> String {
   if left.length() == 0 {
     return right
   }
-  if left.view().has_suffix("/") {
+  if left.clamped_view().has_suffix("/") {
     "\{left}\{right}"
   } else {
     "\{left}/\{right}"
@@ -124,7 +124,7 @@ pub fn find_package_version(script : String, base : String) -> String {
 ///|
 /// Remove a trailing `suffix` from `name`, if present.
 pub fn strip_suffix_owned(name : String, suffix : String) -> String {
-  match name.view().strip_suffix(suffix) {
+  match name.clamped_view().strip_suffix(suffix) {
     Some(view) => view.to_owned()
     None => name
   }
@@ -202,6 +202,19 @@ pub fn pm3_port_path() -> String {
 /// Path of the file that publishes the daemon's process id.
 pub fn pm3_pid_path() -> String {
   path_join(pm3_home(), "daemon.pid")
+}
+
+///|
+/// Path of the lock a client takes before it spawns a daemon.
+///
+/// Two clients that start at the same moment both see no `daemon.port` and
+/// both spawn a daemon; the daemon picks an arbitrary port, so one of the two
+/// wins the file and the other becomes an invisible orphan that keeps
+/// supervising processes nothing can list or stop. PM2 never had this race
+/// because its socket path is fixed and the second `bind` fails; pm3 uses a
+/// random port, so the exclusion has to be a lock instead.
+pub fn pm3_start_lock_path() -> String {
+  path_join(pm3_home(), "daemon.lock")
 }
 
 ///|

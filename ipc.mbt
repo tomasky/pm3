@@ -69,20 +69,22 @@ pub let cmd_reset : String = "reset"
 ///|
 /// A request from the CLI. Kept deliberately generic so new commands do not
 /// require protocol version bumps.
+#derive(Eq, Debug, ToJson, FromJson)
 pub(all) struct Request {
   cmd : String
   args : Array[String]
   opts : Map[String, String]
   flags : Map[String, Bool]
-} derive(Eq, Debug, ToJson, FromJson)
+}
 
 ///|
 /// A reply from the daemon. `data` carries an optional JSON payload.
+#derive(Debug, ToJson, FromJson)
 pub(all) struct Response {
   ok : Bool
   msg : String
   data : Json
-} derive(Debug, ToJson, FromJson)
+}
 
 ///|
 /// A request with a command name and no arguments.

@@ -25,8 +25,7 @@ async fn ensure_dirs() -> Unit {
 fn derive_app_name(script : String) -> String {
   let base = @pm3.path_basename(script)
   match base.rev_find(".") {
-    Some(index) if index > 0 =>
-      base.view(start_offset=0, end_offset=index).to_owned()
+    Some(index) if index > 0 => base.exact_view(start=0, end=index).to_owned()
     _ => base
   }
 }
@@ -737,12 +736,8 @@ pub async fn run_daemon() -> Unit {
     }
     state.save()
     server.close()
-    @fs.remove(@pm3.pm3_port_path()) catch {
-      _ => ()
-    }
-    @fs.remove(@pm3.pm3_pid_path()) catch {
-      _ => ()
-    }
+    @fs.remove(@pm3.pm3_port_path(), allow_missing=true)
+    @fs.remove(@pm3.pm3_pid_path(), allow_missing=true)
     daemon_log("PM3 successfully stopped")
     group.return_immediately(())
   })

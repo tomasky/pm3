@@ -22,6 +22,7 @@ pub let status_errored : String = "errored"
 
 ///|
 /// A process managed by pm3.
+#derive(Eq, Debug, ToJson, FromJson)
 pub(all) struct App {
   // --- identity ---
   mut pm_id : Int32
@@ -93,7 +94,7 @@ pub(all) struct App {
   mut memory : Int64
   mut cpu : Double
   mut last_start_ms : Int64
-} derive(Eq, Debug, ToJson, FromJson)
+}
 
 ///|
 /// Default log path for a stream (`out` or `err`) of an application.

@@ -10,9 +10,9 @@ pub fn parse_fixed_tz(tz : String) -> Int32? {
   let mut body = tz.trim().to_owned()
   let upper = body.to_upper()
   if upper.has_prefix("UTC") {
-    body = body.view(start_offset=3, end_offset=body.length()).to_owned()
+    body = body.exact_view(start=3, end=body.length()).to_owned()
   } else if upper.has_prefix("GMT") {
-    body = body.view(start_offset=3, end_offset=body.length()).to_owned()
+    body = body.exact_view(start=3, end=body.length()).to_owned()
   }
   let trimmed = body.trim().to_owned()
   if trimmed.length() == 0 {
@@ -29,20 +29,14 @@ pub fn parse_fixed_tz(tz : String) -> Int32? {
   } else {
     return None
   }
-  let digits = trimmed.view(start_offset=1, end_offset=trimmed.length())
+  let digits = trimmed.exact_view(start=1, end=trimmed.length())
   let (hour_text, minute_text) = match digits.split_once(":") {
     Some((h, m)) => (h, m)
     None =>
       if digits.length() == 4 {
-        (
-          digits.view(start_offset=0, end_offset=2),
-          digits.view(start_offset=2, end_offset=4),
-        )
+        (digits.exact_view(start=0, end=2), digits.exact_view(start=2, end=4))
       } else {
-        (
-          digits,
-          digits.view(start_offset=digits.length(), end_offset=digits.length()),
-        )
+        (digits, digits.exact_view(start=digits.length(), end=digits.length()))
       }
   }
   let hours = match @pm3.parse_non_negative_int(hour_text) {
@@ -154,7 +148,7 @@ pub async fn read_cpu_ticks(pid : Int32) -> Int64 {
     Some(i) => i
     None => return 0L
   }
-  let rest = text.view(start_offset=close + 1, end_offset=text.length())
+  let rest = text.exact_view(start=close + 1, end=text.length())
   let tokens : Array[String] = []
   for token in rest.split(" ") {
     if token.length() > 0 {
@@ -288,13 +282,9 @@ async fn compress_file(path : String) -> Unit {
   input.close()
   output.close()
   if ok {
-    @fs.remove(path) catch {
-      _ => ()
-    }
+    @fs.remove(path, allow_missing=true)
   } else {
-    @fs.remove(gz) catch {
-      _ => ()
-    }
+    @fs.remove(gz, allow_missing=true)
   }
 }
 

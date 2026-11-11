@@ -94,7 +94,7 @@ fn fit_name_pm2(name : String) -> String {
   if name.length() <= 38 {
     return name
   }
-  name.view(start_offset=0, end_offset=37).to_owned() + "…"
+  name.exact_view(start=0, end=37).to_owned() + "…"
 }
 
 ///|
@@ -584,7 +584,7 @@ fn log_label(app : @pm3.App) -> String {
 /// `pad()`.
 fn pad_label(label : String, width : Int32) -> String {
   if label.length() >= width {
-    label.view(start_offset=0, end_offset=width).to_owned()
+    label.exact_view(start=0, end=width).to_owned()
   } else {
     @pm3.pad_right(label, width, ' ')
   }
@@ -949,7 +949,7 @@ async fn cmd_logs(args : Array[String]) -> Unit {
         }
       _ =>
         if arg.has_prefix("--timestamp=") {
-          timestamp = Some(arg.view(start_offset=12).to_owned())
+          timestamp = Some(arg.exact_view(start=12).to_owned())
         } else if arg.has_prefix("-") {
           print_error("pm3: unknown option \{arg}")
           return
@@ -1042,7 +1042,7 @@ async fn cmd_logrotate(args : Array[String]) -> Unit {
   let mut key = args[0]
   let value = if args.length() >= 2 { args[1] } else { "" }
   if key.has_prefix("logrotate:") {
-    key = key.view(start_offset=10, end_offset=key.length()).to_owned()
+    key = key.exact_view(start=10, end=key.length()).to_owned()
   }
   if value.length() == 0 {
     print_error("pm3: usage: pm3 set logrotate:<key> <value>")

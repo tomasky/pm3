@@ -155,12 +155,13 @@ pub struct Managed {
   mut last_cpu_at : Int64
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ProcStat {
   pid : Int32
   ppid : Int32
   state : Char
   start : Int64
-} derive(Eq, @debug.Debug)
+}
 pub fn ProcStat::equal(Self, Self) -> Bool
 pub fn ProcStat::not_equal(Self, Self) -> Bool
 pub fn ProcStat::to_repr(Self) -> @debug.Repr

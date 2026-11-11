@@ -332,8 +332,7 @@ fn app_from_table(
 pub fn derive_config_app_name(script : String) -> String {
   let base = path_basename(script)
   match base.rev_find(".") {
-    Some(index) if index > 0 =>
-      base.view(start_offset=0, end_offset=index).to_owned()
+    Some(index) if index > 0 => base.exact_view(start=0, end=index).to_owned()
     _ => base
   }
 }

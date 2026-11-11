@@ -21,7 +21,7 @@ pub fn script_extension(path : String) -> String {
   let base = path_basename(path)
   match base.rev_find(".") {
     Some(index) if index > 0 =>
-      base.view(start_offset=index, end_offset=base.length()).to_owned()
+      base.exact_view(start=index, end=base.length()).to_owned()
     _ => ""
   }
 }
@@ -125,15 +125,15 @@ pub fn is_python_interpreter(interpreter : String) -> Bool {
 pub fn runtime_of(interpreter : String) -> String? {
   let mut name = runtime_basename(interpreter).to_lower()
   for ext in [".exe", ".cmd", ".bat"] {
-    match name.view().strip_suffix(ext) {
+    match name.clamped_view().strip_suffix(ext) {
       Some(view) => name = view.to_owned()
       None => ()
     }
   }
   name = strip_version_tag(name)
-  if name == "nodejs" || name.view().has_suffix("node") {
+  if name == "nodejs" || name.clamped_view().has_suffix("node") {
     Some("node")
-  } else if name.view().has_suffix("bun") {
+  } else if name.clamped_view().has_suffix("bun") {
     Some("bun")
   } else {
     None
@@ -151,7 +151,7 @@ fn runtime_basename(path : String) -> String {
       _ => ()
     }
   }
-  path.view(start_offset=start, end_offset=path.length()).to_owned()
+  path.exact_view(start~, end=path.length()).to_owned()
 }
 
 ///|
@@ -197,11 +197,12 @@ fn strip_version_tag(name : String) -> String {
       _ => ()
     }
   }
-  name.view(start_offset=0, end_offset=start).to_owned()
+  name.exact_view(start=0, end=start).to_owned()
 }
 
 ///|
 /// Whether a node binary can run a `.ts` file, and under which conditions.
+#derive(Eq, Debug)
 pub(all) enum TsSupport {
   /// Type stripping is on by default: no flag needed.
   Native
@@ -209,7 +210,7 @@ pub(all) enum TsSupport {
   Flag
   /// This node cannot run TypeScript at all.
   Unsupported
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TsSupport with Eq::{not_equal, equal}
@@ -256,9 +257,9 @@ pub fn type_strip_support(version : String) -> TsSupport {
 fn parse_node_version(version : String) -> (Int32, Int32)? {
   let text = version.trim().to_owned()
   let digits = if text.has_prefix("v") || text.has_prefix("V") {
-    text.view(start_offset=1, end_offset=text.length())
+    text.exact_view(start=1, end=text.length())
   } else {
-    text.view()
+    text.clamped_view()
   }
   let parts : Array[String] = []
   for part in digits.split(".") {
@@ -267,11 +268,11 @@ fn parse_node_version(version : String) -> (Int32, Int32)? {
   if parts.length() < 2 {
     return None
   }
-  let major = match parse_non_negative_int(parts[0].view()) {
+  let major = match parse_non_negative_int(parts[0].clamped_view()) {
     Some(value) => value
     None => return None
   }
-  let minor = match parse_non_negative_int(parts[1].view()) {
+  let minor = match parse_non_negative_int(parts[1].clamped_view()) {
     Some(value) => value
     None => return None
   }

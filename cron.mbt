@@ -18,6 +18,7 @@
 
 ///|
 /// Parsed cron schedule. Fields are sorted ascending and de-duplicated.
+#derive(Eq, Debug)
 pub struct CronSpec {
   seconds : Array[Int32]
   minutes : Array[Int32]
@@ -28,7 +29,7 @@ pub struct CronSpec {
   seconds_restricted : Bool
   dom_restricted : Bool
   dow_restricted : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 fn cron_name_table(kind : Int32) -> Array[String] {

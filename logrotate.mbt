@@ -21,6 +21,7 @@
 ///|
 /// Rotation policy. Persisted as JSON so `pm3 set logrotate:...` survives
 /// daemon restarts.
+#derive(Eq, Debug, ToJson, FromJson)
 pub struct LogrotateConfig {
   /// Rotate when a log reaches this many bytes. `0` disables size rotation.
   mut max_size : Int64
@@ -45,7 +46,7 @@ pub struct LogrotateConfig {
   mut min_size : Int64
   /// Delete rotated files older than this many days. `0` disables the age cap.
   mut max_age_days : Int32
-} derive(Eq, Debug, ToJson, FromJson)
+}
 
 ///|
 /// Default policy, matching the familiar `pm2-logrotate` defaults.
@@ -81,10 +82,11 @@ pub fn parse_bool_value(text : StringView) -> Bool? {
 /// The modification time is in nanoseconds since the epoch. Sub-second
 /// precision matters: a busy log can rotate several times inside one second,
 /// and retention has to tell those files apart to keep the true newest ones.
+#derive(Eq, Debug)
 pub(all) struct RotatedFile {
   name : String
   mtime : Int64
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compute the path a rotated log should be renamed to.
@@ -112,15 +114,15 @@ pub fn rotated_path(
 pub fn parse_rotated_stamp(log_path : String, file_name : String) -> String? {
   let base = strip_suffix_owned(path_basename(log_path), ".log")
   let prefix = "\{base}__"
-  let view = file_name.view()
+  let view = file_name.clamped_view()
   guard view.has_prefix(prefix) else { return None }
-  let rest = view.view(start_offset=prefix.length(), end_offset=view.length())
+  let rest = view.exact_view(start=prefix.length(), end=view.length())
   let body = match rest.strip_suffix(".gz") {
     Some(v) => v
     None => rest
   }
   guard body.has_suffix(".log") else { return None }
-  Some(body.view(start_offset=0, end_offset=body.length() - 4).to_owned())
+  Some(body.exact_view(start=0, end=body.length() - 4).to_owned())
 }
 
 ///|

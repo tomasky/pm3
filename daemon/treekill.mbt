@@ -19,6 +19,7 @@
 ///
 /// `start` is field 22, `starttime`, in clock ticks since boot: together with
 /// the pid it names one process for the lifetime of the machine.
+#derive(Eq, Debug)
 pub(all) struct ProcStat {
   pid : Int32
   ppid : Int32
@@ -27,7 +28,7 @@ pub(all) struct ProcStat {
   /// killing.
   state : Char
   start : Int64
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ProcStat with Eq::{not_equal, equal}
@@ -47,7 +48,7 @@ pub fn parse_proc_stat(text : String, pid : Int32) -> ProcStat? {
     Some(index) => index
     None => return None
   }
-  let rest = text.view(start_offset=close + 1, end_offset=text.length())
+  let rest = text.exact_view(start=close + 1, end=text.length())
   let tokens : Array[String] = []
   for token in rest.split(" ") {
     if token.length() > 0 {
@@ -145,7 +146,7 @@ pub async fn snapshot_tree(root : Int32) -> Array[ProcStat]? {
   let children : Map[Int32, Array[Int32]] = Map([])
   let stats : Map[Int32, ProcStat] = Map([])
   for name in names {
-    let pid = match @pm3.parse_non_negative_int(name.view()) {
+    let pid = match @pm3.parse_non_negative_int(name.clamped_view()) {
       Some(pid) => pid
       None => continue
     }

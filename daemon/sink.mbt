@@ -313,9 +313,9 @@ pub async fn LogSink::prune(self : LogSink, now : Int64) -> Unit {
     now,
   )
   for path in doomed {
-    @fs.remove(path) catch {
-      _ => ()
-    }
+    // A file another pm3 already removed is not an error worth reporting,
+    // and `allow_missing` says exactly that instead of swallowing every one.
+    @fs.remove(path, allow_missing=true)
   }
 }
 

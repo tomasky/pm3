@@ -68,7 +68,7 @@ fn render_token(
   weekday : Int32,
   offset_secs : Int32,
 ) -> (String, Int32)? {
-  let rest = fmt.view(start_offset=pos, end_offset=fmt.length())
+  let rest = fmt.exact_view(start=pos, end=fmt.length())
   let abs_offset = if offset_secs < 0 { -offset_secs } else { offset_secs }
   let offset_sign = if offset_secs < 0 { "-" } else { "+" }
   let offset_hh = pad_left((abs_offset / 3600).to_string(), 2, '0')

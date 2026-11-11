@@ -13,9 +13,9 @@ pub fn app_config_candidates() -> Array[String]
 
 pub fn app_field_names() -> Array[String]
 
-pub fn app_records_from_json(Json) -> Array[App]?
+pub fn app_records_from_json(@json.Json) -> Array[App]?
 
-pub fn apps_from_json(Json, String) -> Result[Array[App], String]
+pub fn apps_from_json(@json.Json, String) -> Result[Array[App], String]
 
 pub fn bg_black_bright(String) -> String
 
@@ -123,7 +123,7 @@ pub fn format_uptime_pm2(Int64) -> String
 
 pub fn green_bold(String) -> String
 
-pub fn has_apps(Json) -> Bool
+pub fn has_apps(@json.Json) -> Bool
 
 pub fn interpreter_for_extension(String) -> String?
 
@@ -141,9 +141,9 @@ pub fn load_apps_from_file(String) -> Result[Array[App], String]
 
 pub fn load_logrotate_config() -> (LogrotateConfig, ConfigSource)
 
-pub fn logrotate_from_json(Json) -> Result[LogrotateConfig, String]
+pub fn logrotate_from_json(@json.Json) -> Result[LogrotateConfig, String]
 
-pub fn logrotate_to_json(LogrotateConfig) -> Json
+pub fn logrotate_to_json(LogrotateConfig) -> @json.Json
 
 pub fn logrotate_to_toml(LogrotateConfig) -> String
 
@@ -157,7 +157,7 @@ pub fn pad_visible(String, Int32, Char) -> String
 
 pub fn parse_bool_value(StringView) -> Bool?
 
-pub fn parse_config_text(String, ConfigFormat) -> Result[Json, String]
+pub fn parse_config_text(String, ConfigFormat) -> Result[@json.Json, String]
 
 pub fn parse_cron(String) -> CronSpec?
 
@@ -169,7 +169,7 @@ pub fn parse_size(StringView) -> Int64?
 
 pub fn parse_size_or(StringView, Int64) -> Int64
 
-pub fn parse_toml(String) -> Result[Json, String]
+pub fn parse_toml(String) -> Result[@json.Json, String]
 
 pub fn path_basename(String) -> String
 
@@ -199,11 +199,13 @@ pub fn pm3_pid_path() -> String
 
 pub fn pm3_port_path() -> String
 
+pub fn pm3_start_lock_path() -> String
+
 pub fn pm3_state_dir() -> String
 
 pub let pm3_version : String
 
-pub fn read_config_file(String) -> Result[Json, String]
+pub fn read_config_file(String) -> Result[@json.Json, String]
 
 pub fn red_bold(String) -> String
 
@@ -269,7 +271,7 @@ pub fn visible_width(String) -> Int32
 
 pub fn weekday_from_days(Int32) -> Int32
 
-pub fn with_app_defaults(Json) -> Json
+pub fn with_app_defaults(@json.Json) -> @json.Json
 
 pub fn write_default_config(ConfigFormat, Bool) -> Result[String, String]
 
@@ -278,6 +280,7 @@ pub fn yellow_bold(String) -> String
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct App {
   mut pm_id : Int32
   mut name : String
@@ -317,12 +320,12 @@ pub(all) struct App {
   mut memory : Int64
   mut cpu : Double
   mut last_start_ms : Int64
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn App::command_display(Self) -> String
 pub fn App::command_line(Self) -> (String, Array[String])
 pub fn App::display_pid(Self) -> Int32
 pub fn App::equal(Self, Self) -> Bool
-pub fn App::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn App::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn App::is_online(Self) -> Bool
 pub fn App::mark_exited(Self, Int32) -> Unit
 pub fn App::mark_started(Self, Int32) -> Unit
@@ -330,27 +333,30 @@ pub fn App::new(String, String, Array[String]) -> Self
 pub fn App::not_equal(Self, Self) -> Bool
 pub fn App::record_restart(Self) -> Unit
 pub fn App::should_restart(Self, Int32) -> Bool
-pub fn App::to_json(Self) -> Json
+pub fn App::to_json(Self) -> @json.Json
 pub fn App::to_repr(Self) -> @debug.Repr
-pub fn App::to_summary_json(Self) -> Json
+pub fn App::to_summary_json(Self) -> @json.Json
 pub fn App::wants_stop(Self) -> Bool
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ConfigFormat {
   Toml
   Json
-} derive(Eq, @debug.Debug)
+}
 pub fn ConfigFormat::equal(Self, Self) -> Bool
 pub fn ConfigFormat::not_equal(Self, Self) -> Bool
 pub fn ConfigFormat::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct ConfigSource {
   path : String
   format : ConfigFormat
-} derive(Eq, @debug.Debug)
+}
 pub fn ConfigSource::equal(Self, Self) -> Bool
 pub fn ConfigSource::not_equal(Self, Self) -> Bool
 pub fn ConfigSource::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct CronSpec {
   seconds : Array[Int32]
   minutes : Array[Int32]
@@ -361,11 +367,12 @@ pub struct CronSpec {
   seconds_restricted : Bool
   dom_restricted : Bool
   dow_restricted : Bool
-} derive(Eq, @debug.Debug)
+}
 pub fn CronSpec::equal(Self, Self) -> Bool
 pub fn CronSpec::not_equal(Self, Self) -> Bool
 pub fn CronSpec::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub struct LogrotateConfig {
   mut max_size : Int64
   mut retain : Int32
@@ -378,54 +385,58 @@ pub struct LogrotateConfig {
   mut rotate_module : Bool
   mut min_size : Int64
   mut max_age_days : Int32
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn LogrotateConfig::equal(Self, Self) -> Bool
-pub fn LogrotateConfig::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn LogrotateConfig::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn LogrotateConfig::not_equal(Self, Self) -> Bool
 pub fn LogrotateConfig::set_field(Self, String, String) -> Result[Unit, String]
 pub fn LogrotateConfig::to_display(Self) -> String
-pub fn LogrotateConfig::to_json(Self) -> Json
+pub fn LogrotateConfig::to_json(Self) -> @json.Json
 pub fn LogrotateConfig::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Request {
   cmd : String
   args : Array[String]
   opts : Map[String, String]
   flags : Map[String, Bool]
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn Request::equal(Self, Self) -> Bool
-pub fn Request::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Request::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Request::new(String) -> Self
 pub fn Request::not_equal(Self, Self) -> Bool
-pub fn Request::to_json(Self) -> Json
+pub fn Request::to_json(Self) -> @json.Json
 pub fn Request::to_repr(Self) -> @debug.Repr
 pub fn Request::with_args(String, Array[String]) -> Self
 
+#derive(@debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Response {
   ok : Bool
   msg : String
-  data : Json
-} derive(ToJson, @debug.Debug, @json.FromJson)
+  data : @json.Json
+}
 pub fn Response::failure(String) -> Self
-pub fn Response::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Response::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Response::success(String) -> Self
-pub fn Response::success_data(String, Json) -> Self
-pub fn Response::to_json(Self) -> Json
+pub fn Response::success_data(String, @json.Json) -> Self
+pub fn Response::to_json(Self) -> @json.Json
 pub fn Response::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct RotatedFile {
   name : String
   mtime : Int64
-} derive(Eq, @debug.Debug)
+}
 pub fn RotatedFile::equal(Self, Self) -> Bool
 pub fn RotatedFile::not_equal(Self, Self) -> Bool
 pub fn RotatedFile::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum TsSupport {
   Native
   Flag
   Unsupported
-} derive(Eq, @debug.Debug)
+}
 pub fn TsSupport::equal(Self, Self) -> Bool
 pub fn TsSupport::not_equal(Self, Self) -> Bool
 pub fn TsSupport::to_repr(Self) -> @debug.Repr

@@ -78,8 +78,8 @@ pub fn parse_size(text : StringView) -> Int64? {
   if i == 0 {
     return None
   }
-  let number_part = t.view(start_offset=0, end_offset=i)
-  let unit_part = t.view(start_offset=i, end_offset=n).trim()
+  let number_part = t.exact_view(start=0, end=i)
+  let unit_part = t.exact_view(start=i, end=n).trim()
   guard parse_size_number(number_part) is Some(value) else { return None }
   guard size_unit_factor(unit_part) is Some(factor) else { return None }
   Some((value * factor.to_double()).to_int64())

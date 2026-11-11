@@ -17,17 +17,19 @@
 
 ///|
 /// The two configuration syntaxes pm3 understands.
+#derive(Eq, Debug)
 pub(all) enum ConfigFormat {
   Toml
   Json
-} derive(Eq, Debug)
+}
 
 ///|
 /// A configuration file pm3 found: where it is and how to read it.
+#derive(Eq, Debug)
 pub(all) struct ConfigSource {
   path : String
   format : ConfigFormat
-} derive(Eq, Debug)
+}
 
 ///|
 /// Format implied by a file name, or `None` for an extension pm3 refuses to

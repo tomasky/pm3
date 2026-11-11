@@ -28,9 +28,9 @@ pub fn truncate_text(text : String, width : Int32) -> String {
     return text
   }
   if width <= 3 {
-    return text.view(start_offset=0, end_offset=width).to_owned()
+    return text.exact_view(start=0, end=width).to_owned()
   }
-  text.view(start_offset=0, end_offset=width - 3).to_owned() + "..."
+  text.exact_view(start=0, end=width - 3).to_owned() + "..."
 }
 
 ///|
