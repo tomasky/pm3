@@ -69,13 +69,17 @@ running=$(daemon_count)
 # The start lock must not be left behind.
 [ ! -e "$PM3_HOME/daemon.lock" ] || fail "daemon.lock was left behind"
 
-# `pm3 doctor` must agree: one daemon, and it is the current one.
+# `pm3 doctor` must agree with what the race left behind: it exits non-zero on
+# a failed check, and an orphan is exactly that.
 if ! out=$("$PM3" doctor 2>&1); then
   echo "$out" >&2
-  fail "pm3 doctor reported orphans after a clean start"
+  fail "pm3 doctor reported a problem after a clean start"
 fi
-echo "$out" | grep -q "current" || fail "pm3 doctor does not show the daemon as current"
-echo "$out" | grep -q "orphan" && fail "pm3 doctor still lists an orphan"
+echo "$out" | grep -q "fail" && fail "pm3 doctor reports a failed check"
+echo "$out" | grep -q "reachable through daemon.port" ||
+  fail "pm3 doctor does not confirm the daemon is reachable"
+# The probe file the writability check writes must not be left behind.
+[ ! -e "$PM3_HOME/.pm3-doctor-probe" ] || fail "pm3 doctor left its probe file behind"
 
 "$PM3" kill >/dev/null 2>&1 || true
 for _ in $(seq 50); do

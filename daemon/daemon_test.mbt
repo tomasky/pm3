@@ -336,3 +336,69 @@ test "doctor treats a stale pid file as no current daemon" {
   // No daemons running.
   assert_eq(@daemon.current_daemon([], Some(100)), None)
 }
+
+///|
+/// The writability probe has to answer "can I create a file here", not "what
+/// are the permission bits": a full disk keeps the bits and still fails the
+/// write that saves the process list, and root ignores the bits entirely.
+/// `/proc` refuses creation even for root, so it is the case that proves the
+/// probe writes rather than stats.
+async test "the writability probe answers by writing" {
+  let dir = "/tmp/pm3-doctor-probe-test"
+  @fs.mkdir(dir, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  assert_true(@daemon.dir_writable(dir) is Ok(_))
+  // Nothing is left behind.
+  let names = @fs.readdir(dir) catch { _ => [] }
+  assert_eq(names.length(), 0)
+  // A pseudo-filesystem that refuses creation even for root.
+  match @daemon.dir_writable("/proc") {
+    Ok(_) => abort("/proc accepted a file; the probe does not write")
+    Err(_) => ()
+  }
+  // A directory that does not exist cannot be written to either.
+  match @daemon.dir_writable("/tmp/pm3-no-such-dir-for-doctor") {
+    Ok(_) => abort("a missing directory was reported writable")
+    Err(_) => ()
+  }
+  @fs.rmdir(dir) catch {
+    _ => ()
+  }
+}
+
+///|
+/// Details are clamped so one long path cannot stretch the table off screen.
+test "doctor clamps long details, keeping the OS reason" {
+  assert_eq(@daemon.clamp_detail("short"), "short")
+  let long_path = "/home/someone/.pm3/" + "nested/".repeat(20) + "file"
+  let message = "not writable: OSError(\"@fs.open(): \\\"" +
+    long_path +
+    "\\\": No space left on device\")"
+  let clamped = @daemon.clamp_detail(message)
+  assert_true(clamped.length() <= 64)
+  // The reason after the path is what the reader needs.
+  assert_eq(clamped, "No space left on device\")")
+  // Without an `": ` separator the head is kept and marked.
+  let no_separator = "x".repeat(100)
+  assert_eq(@daemon.clamp_detail(no_separator).length(), 64)
+  assert_true(@daemon.clamp_detail(no_separator).has_suffix("..."))
+}
+
+///|
+/// The exit status follows the checks: a warning is not a failure.
+test "only a failed check fails the command" {
+  assert_false(
+    @daemon.checks_failed([
+      { name: "a", state: @daemon.CheckState::Ok, detail: "", },
+      { name: "b", state: @daemon.CheckState::Warn, detail: "", },
+    ]),
+  )
+  assert_true(
+    @daemon.checks_failed([
+      { name: "a", state: @daemon.CheckState::Ok, detail: "", },
+      { name: "b", state: @daemon.CheckState::Fail, detail: "", },
+    ]),
+  )
+  assert_false(@daemon.checks_failed([]))
+}

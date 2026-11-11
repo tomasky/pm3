@@ -1242,41 +1242,42 @@ async fn cmd_doctor(args : Array[String]) -> Unit {
       orphans.push(daemon)
     }
   }
+  let checks = @daemon.run_checks(home)
   if json {
     let records : Array[Json] = []
-    for daemon in daemons {
+    for check in checks {
       records.push({
-        "pid": Json::number(daemon.pid.to_double()),
-        "current": Json::boolean(current == Some(daemon.pid)),
+        "check": Json::string(check.name),
+        "state": Json::string(@daemon.check_state_label(check.state)),
+        "detail": Json::string(check.detail),
       })
     }
     print_line(@json.to_json(records).stringify(indent=2))
   } else {
     print_line(" PM3 doctor: \{home} ")
-    if daemons.length() == 0 {
-      print_line("No pm3 daemon is running for this home.")
-    } else {
-      let rows : Array[Array[String]] = []
-      for daemon in daemons {
-        rows.push([
-          daemon.pid.to_string(),
-          if current == Some(daemon.pid) {
-            "current"
-          } else {
-            "orphan"
-          },
-        ])
-      }
-      print_line(@pm3.render_box(Some(["pid", "state"]), rows, style=colors()))
+    let rows : Array[Array[String]] = []
+    for check in checks {
+      rows.push([
+        check.name,
+        @daemon.check_state_label(check.state),
+        check.detail,
+      ])
     }
-    if orphans.length() > 0 {
-      // Reported on stderr and with a non-zero status so a health check can
-      // act on it without parsing the table.
-      command_failed.val = true
-      @stdio.stderr.write(
-        "\{orphans.length()} orphan daemon(s) are supervising processes nothing can list. Run `pm3 doctor --fix` to signal them.\n",
-      )
-    }
+    print_line(
+      @pm3.render_box(Some(["check", "state", "detail"]), rows, style=colors()),
+    )
+  }
+  // Both an orphan and a failed check mean something is already wrong, so the
+  // status is non-zero either way and a health check can act on it without
+  // parsing the table.
+  if orphans.length() > 0 {
+    @stdio.stderr.write(
+      "\{orphans.length()} orphan daemon(s) are supervising processes nothing can list. Run `pm3 doctor --fix` to signal them.\n",
+    )
+  }
+  let failed = @daemon.checks_failed(checks)
+  if orphans.length() > 0 || failed {
+    command_failed.val = true
   }
   if !fix || orphans.length() == 0 {
     return

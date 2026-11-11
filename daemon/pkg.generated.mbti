@@ -11,11 +11,19 @@ import {
 }
 
 // Values
+pub fn check_state_label(CheckState) -> String
+
+pub fn checks_failed(Array[Check]) -> Bool
+
+pub fn clamp_detail(String) -> String
+
 pub fn cmdline_is_daemon_for(Array[String], String) -> Bool
 
 pub fn current_daemon(Array[DaemonProc], Int32?) -> Int32?
 
 pub async fn delete_managed(DaemonState, Managed) -> Unit
+
+pub async fn dir_writable(String) -> Result[Unit, String]
 
 pub async fn find_daemons(String) -> Array[DaemonProc]
 
@@ -65,6 +73,8 @@ pub async fn resolve_tz_offset(String, Int64) -> Int32
 
 pub async fn restart_managed(@async.TaskGroup[Unit], DaemonState, Managed) -> Unit
 
+pub async fn run_checks(String) -> Array[Check]
+
 pub async fn run_compress_loop(DaemonState) -> Unit
 
 pub async fn run_daemon() -> Unit
@@ -104,6 +114,26 @@ pub async fn which_runtime(String) -> String?
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct Check {
+  name : String
+  state : CheckState
+  detail : String
+}
+pub fn Check::equal(Self, Self) -> Bool
+pub fn Check::not_equal(Self, Self) -> Bool
+pub fn Check::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum CheckState {
+  Ok
+  Warn
+  Fail
+}
+pub fn CheckState::equal(Self, Self) -> Bool
+pub fn CheckState::not_equal(Self, Self) -> Bool
+pub fn CheckState::to_repr(Self) -> @debug.Repr
+
 #derive(Eq, @debug.Debug)
 pub(all) struct DaemonProc {
   pid : Int32
