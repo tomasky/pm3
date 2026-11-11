@@ -54,8 +54,14 @@ async fn is_alive(pid : Int32) -> Bool {
 /// the file and the other fails. A lock left behind by a client that died
 /// mid-spawn names a pid; once that pid is gone the lock is stale and is
 /// replaced, so a crash cannot wedge every later command.
-async fn take_start_lock() -> Bool {
-  let path = @pm3.pm3_start_lock_path()
+///
+/// `path` exists so the tests can race over a scratch directory instead of the
+/// real state directory; callers use the default.
+async fn take_start_lock(path? : String) -> Bool {
+  let path = match path {
+    Some(path) => path
+    None => @pm3.pm3_start_lock_path()
+  }
   let write_lock = () => {
     try {
       @fs.write_file(
@@ -82,12 +88,57 @@ async fn take_start_lock() -> Bool {
 
 ///|
 /// Whether the lock at `path` was left by a process that no longer exists.
+///
+/// The `CreateNew` that takes the lock and the write of the pid into it are
+/// two syscalls, so a second client can read the file while it is still empty.
+/// Reading that as "stale" let the second client delete a lock a live client
+/// had just taken and spawn a second daemon, which is the whole race the lock
+/// exists to prevent — observed once in twelve runs of eight concurrent
+/// clients.
+///
+/// Unparseable content is therefore retried for a short window: a winner
+/// fills the file within microseconds, while a lock left by a client killed
+/// mid-spawn never becomes readable and is still stolen, after half a second.
 async fn lock_is_stale(path : String) -> Bool {
-  let text = @fs.read_file(path).text() catch { _ => return true }
-  match @pm3.parse_non_negative_int(text.trim()) {
-    None => true
-    Some(pid) => !is_alive(pid)
+  for attempt in 0..<10 {
+    let text = @fs.read_file(path).text() catch { _ => return true }
+    match @pm3.parse_non_negative_int(text.trim()) {
+      Some(pid) => return !is_alive(pid)
+      None =>
+        // Empty or garbage. An empty file is a lock being taken right now;
+        // give the winner time to write its pid before assuming it is dead.
+        if attempt < 9 {
+          @async.sleep(50)
+        }
+    }
   }
+  true
+}
+
+///|
+/// Whether a daemon is already reachable, checked while holding the start
+/// lock.
+///
+/// The port file can appear at any moment, including between this client's
+/// failed first request and the point where it acquires the lock. Spawning
+/// then would leave a second daemon that nobody can see, so the file is
+/// re-read here and a `ping` settles whether the process behind it is alive.
+/// A port file left by a daemon that was killed answers nothing, which is the
+/// case that must still spawn.
+async fn daemon_already_running() -> Bool {
+  if read_port_file() is None {
+    return false
+  }
+  for _ in 0..<20 {
+    match
+      @async.with_timeout_opt(1000, () => {
+        try_call(@pm3.Request::new(@pm3.cmd_ping))
+      }) {
+      Some(Some(response)) => return response.ok
+      _ => @async.sleep(100)
+    }
+  }
+  false
 }
 
 ///|
@@ -115,6 +166,13 @@ pub async fn start_daemon() -> Unit {
   defer (@fs.remove(@pm3.pm3_start_lock_path(), allow_missing=true) catch {
     _ => ()
   })
+  // The lock only excludes clients that reach it at the same time. A client
+  // whose first request failed may acquire it just after the previous holder
+  // released it, so re-check under the lock: a daemon that is already
+  // answering means this client has nothing to spawn.
+  if daemon_already_running() {
+    return
+  }
   let out = @process.redirect_to_file(
     log,
     append=true,
