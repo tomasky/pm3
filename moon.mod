@@ -5,7 +5,7 @@
 
 name = "kupas/pm3"
 
-version = "0.1.8"
+version = "0.1.9"
 
 readme = "README.md"
 
@@ -28,6 +28,6 @@ description = "A language-agnostic process manager (PM2-like) with built-in log 
 preferred_target = "native"
 
 import {
-  "moonbitlang/async@0.22.4",
-  "moonbitlang/x@0.5.5",
+  "moonbitlang/async@0.22.9",
+  "moonbitlang/x@0.5.7",
 }
