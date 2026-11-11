@@ -11,7 +11,13 @@ import {
 }
 
 // Values
+pub fn cmdline_is_daemon_for(Array[String], String) -> Bool
+
+pub fn current_daemon(Array[DaemonProc], Int32?) -> Int32?
+
 pub async fn delete_managed(DaemonState, Managed) -> Unit
+
+pub async fn find_daemons(String) -> Array[DaemonProc]
 
 pub async fn halt_managed(DaemonState, Managed) -> Unit
 
@@ -98,6 +104,15 @@ pub async fn which_runtime(String) -> String?
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct DaemonProc {
+  pid : Int32
+  home : String
+}
+pub fn DaemonProc::equal(Self, Self) -> Bool
+pub fn DaemonProc::not_equal(Self, Self) -> Bool
+pub fn DaemonProc::to_repr(Self) -> @debug.Repr
+
 pub struct DaemonState {
   mut apps : Map[Int32, Managed]
   mut next_id : Int32

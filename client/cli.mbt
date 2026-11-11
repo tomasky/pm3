@@ -1206,6 +1206,91 @@ async fn cmd_kill() -> Unit {
 }
 
 ///|
+/// `pm3 doctor` — look for daemons that belong to this `PM3_HOME` but are not
+/// the one `daemon.pid` names.
+///
+/// Such an orphan can only appear when something went wrong: the daemon binds
+/// an arbitrary port, so two of them mean one is supervising processes that
+/// `pm3 list` cannot show and `pm3 kill` cannot reach, holding their
+/// descriptors and restarting them forever. Nothing else in pm3 is able to
+/// notice, because every command addresses the daemon through the port file.
+///
+/// Read-only unless `--fix` is given, so running it to *look* is always safe.
+async fn cmd_doctor(args : Array[String]) -> Unit {
+  let mut fix = false
+  let mut json = false
+  for arg in args {
+    match arg {
+      "--fix" => fix = true
+      "--json" => json = true
+      _ => {
+        print_error("pm3: unknown option '\{arg}'")
+        print_usage()
+        return
+      }
+    }
+  }
+  let home = @pm3.pm3_home()
+  let daemons = @daemon.find_daemons(home)
+  let pid_file_pid = @pm3.parse_non_negative_int(
+    (@fs.read_file(@pm3.pm3_pid_path()).text() catch { _ => "" }).trim(),
+  )
+  let current = @daemon.current_daemon(daemons, pid_file_pid)
+  let orphans : Array[@daemon.DaemonProc] = []
+  for daemon in daemons {
+    if current != Some(daemon.pid) {
+      orphans.push(daemon)
+    }
+  }
+  if json {
+    let records : Array[Json] = []
+    for daemon in daemons {
+      records.push({
+        "pid": Json::number(daemon.pid.to_double()),
+        "current": Json::boolean(current == Some(daemon.pid)),
+      })
+    }
+    print_line(@json.to_json(records).stringify(indent=2))
+  } else {
+    print_line(" PM3 doctor: \{home} ")
+    if daemons.length() == 0 {
+      print_line("No pm3 daemon is running for this home.")
+    } else {
+      let rows : Array[Array[String]] = []
+      for daemon in daemons {
+        rows.push([
+          daemon.pid.to_string(),
+          if current == Some(daemon.pid) {
+            "current"
+          } else {
+            "orphan"
+          },
+        ])
+      }
+      print_line(@pm3.render_box(Some(["pid", "state"]), rows, style=colors()))
+    }
+    if orphans.length() > 0 {
+      // Reported on stderr and with a non-zero status so a health check can
+      // act on it without parsing the table.
+      command_failed.val = true
+      @stdio.stderr.write(
+        "\{orphans.length()} orphan daemon(s) are supervising processes nothing can list. Run `pm3 doctor --fix` to signal them.\n",
+      )
+    }
+  }
+  if !fix || orphans.length() == 0 {
+    return
+  }
+  for daemon in orphans {
+    // SIGKILL rather than SIGTERM: the daemon's own shutdown path saves its
+    // dump, and an orphan's dump would overwrite the current one with a list
+    // that nothing else can see. Dropping it is the only safe option.
+    @daemon.send_signal(daemon.pid, @daemon.signal_number("SIGKILL"))
+    print_line("Signalled orphan daemon \{daemon.pid}.")
+  }
+}
+
+///|
 /// `pm3 update` — restart the daemon so it runs this build, the way
 /// `pm2 update` does: save the list, kill the daemon, launch it again and
 /// bring the saved processes back online.
@@ -1275,6 +1360,7 @@ async fn print_help() -> Unit {
     ("save", "save the process list"),
     ("resurrect", "bring saved processes back up"),
     ("update", "restart the daemon with this pm3 build"),
+    ("doctor [--fix] [--json]", "report daemons that nothing else can see"),
     ("kill", "kill the pm3 daemon"),
     ("version", "print the pm3 version"),
     ("help", "show this help"),
@@ -1440,6 +1526,7 @@ pub async fn main_cli() -> Unit {
     "set" => cmd_set(rest)
     "config" => cmd_config(rest)
     "kill" => cmd_kill()
+    "doctor" => cmd_doctor(rest)
     "version" | "--version" | "-v" => cmd_version()
     "help" | "--help" | "-h" => print_help()
     _ => {

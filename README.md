@@ -381,8 +381,40 @@ in the list, the way `pm2 start all` does.
 | `pm3 save` | Persist the process list to `dump.json` |
 | `pm3 resurrect` | Start the processes that were desired online |
 | `pm3 update` | Restart the daemon with this build, then resurrect what was online |
+| `pm3 doctor [--fix] [--json]` | Report daemons that belong to this home but are not the one `daemon.pid` names |
 | `pm3 kill` | Stop the daemon (and its processes) |
 | `pm3 version` | Print the version |
+
+### `pm3 doctor`
+
+The daemon binds an arbitrary port and publishes it in `daemon.port`, so every
+command addresses it through that file. A second daemon for the same home would
+therefore supervise processes that `pm3 list` cannot show and `pm3 kill` cannot
+reach, holding their descriptors and restarting them forever. pm3 takes a lock
+before spawning so this should not happen, but a lock can only cover the
+clients that use it — a daemon started by hand, or by an older build, leaves an
+orphan.
+
+`pm3 doctor` scans `/proc` for daemons whose title names this `PM3_HOME` and
+reports which one `daemon.pid` points at. It is read-only, exits non-zero when
+it finds an orphan so a health check can act on it, and `--fix` signals the
+orphans with `SIGKILL` — deliberately not `SIGTERM`, because an orphan's
+shutdown would save its own `dump.json` over the list the live daemon owns.
+
+```
+$ pm3 doctor
+ PM3 doctor: /root/.pm3
+┌───────┬─────────┐
+│ pid   │ state   │
+├───────┼─────────┤
+│ 19370 │ orphan  │
+│ 19612 │ current │
+└───────┴─────────┘
+1 orphan daemon(s) are supervising processes nothing can list. Run `pm3 doctor --fix` to signal them.
+```
+
+Processes that only the orphan was running come back as `stopped`; start them
+again with `pm3 resurrect` or `pm3 start`.
 
 ### `start` options
 

@@ -290,3 +290,49 @@ async test "a /dev/null sink is discarded, never opened or rotated" {
   assert_eq(state.sinks.length(), 0)
   assert_eq(@fs.kind("/dev/null") catch { _ => @fs.Unknown }, @fs.CharDevice)
 }
+
+///|
+/// A daemon rewrites its whole argv block, so its `/proc/<pid>/cmdline` is the
+/// title alone; before the rewrite it is `<binary> daemon <title>`. Both have
+/// to be recognised, and a process that merely mentions the home must not be.
+test "doctor recognises a daemon before and after its title rewrite" {
+  let home = "/root/.pm3"
+  let title = "PM3 v0.1.9: God Daemon (/root/.pm3)"
+  // Rewritten: one field.
+  assert_true(@daemon.cmdline_is_daemon_for([title], home))
+  // Not yet rewritten: `<binary> daemon <title>`.
+  assert_true(
+    @daemon.cmdline_is_daemon_for(["/usr/bin/pm3", "daemon", title], home),
+  )
+  // A client command is not a daemon, even though it may mention the home.
+  assert_false(@daemon.cmdline_is_daemon_for(["/usr/bin/pm3", "doctor"], home))
+  assert_false(
+    @daemon.cmdline_is_daemon_for(["/usr/bin/pm3", "logs", home], home),
+  )
+  // A daemon for another home is someone else's.
+  assert_false(@daemon.cmdline_is_daemon_for([title], "/home/other/.pm3"))
+  // Empty and unrelated argument lists are not daemons.
+  assert_false(@daemon.cmdline_is_daemon_for([], home))
+  assert_false(
+    @daemon.cmdline_is_daemon_for(["/bin/sh", "-c", "sleep 1"], home),
+  )
+}
+
+///|
+/// `daemon.pid` decides which daemon is "current". A pid file naming a process
+/// that is not a daemon for this home is stale, which is what a crashed daemon
+/// leaves behind, and must not make every other daemon look like an orphan.
+test "doctor treats a stale pid file as no current daemon" {
+  let daemons : Array[@daemon.DaemonProc] = [
+    { pid: 100, home: "/root/.pm3", },
+    { pid: 200, home: "/root/.pm3", },
+  ]
+  assert_eq(@daemon.current_daemon(daemons, Some(100)), Some(100))
+  assert_eq(@daemon.current_daemon(daemons, Some(200)), Some(200))
+  // The pid file names a process that is gone or is not a daemon.
+  assert_eq(@daemon.current_daemon(daemons, Some(999)), None)
+  // No pid file at all, e.g. after a crash.
+  assert_eq(@daemon.current_daemon(daemons, None), None)
+  // No daemons running.
+  assert_eq(@daemon.current_daemon([], Some(100)), None)
+}

@@ -69,6 +69,14 @@ running=$(daemon_count)
 # The start lock must not be left behind.
 [ ! -e "$PM3_HOME/daemon.lock" ] || fail "daemon.lock was left behind"
 
+# `pm3 doctor` must agree: one daemon, and it is the current one.
+if ! out=$("$PM3" doctor 2>&1); then
+  echo "$out" >&2
+  fail "pm3 doctor reported orphans after a clean start"
+fi
+echo "$out" | grep -q "current" || fail "pm3 doctor does not show the daemon as current"
+echo "$out" | grep -q "orphan" && fail "pm3 doctor still lists an orphan"
+
 "$PM3" kill >/dev/null 2>&1 || true
 for _ in $(seq 50); do
   [ "$(daemon_count)" -eq 0 ] && break
