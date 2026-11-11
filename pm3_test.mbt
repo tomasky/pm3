@@ -759,3 +759,44 @@ test "is_discard_log_path knows the null device" {
   assert_false(@pm3.is_discard_log_path("/var/log/app-out.log"))
   assert_false(@pm3.is_discard_log_path("/dev/null2"))
 }
+
+///|
+/// The version is written down in three places: `moon.mod` (what the
+/// registry and `moon publish` see), `version.mbt` (what the binary and the
+/// daemon report) and `npmjs/package.json` (what npm installs). MoonBit
+/// cannot read `moon.mod` at compile time, so a release has to update all
+/// three by hand — and forgetting one ships a binary that claims to be the
+/// previous release. This test is the reminder that fails loudly instead.
+test "the release version is the same in moon.mod, version.mbt and package.json" {
+  let from_mod = read_first_version("moon.mod") catch {
+    _ => abort("cannot read moon.mod")
+  }
+  let from_pkg = read_first_version("npmjs/package.json") catch {
+    _ => abort("cannot read npmjs/package.json")
+  }
+  assert_eq(from_mod, @pm3.pm3_version)
+  assert_eq(from_pkg, @pm3.pm3_version)
+}
+
+///|
+/// The `"version": "x.y.z"` of a JSON file, or the `version = "x.y.z"` of a
+/// `moon.mod`, whichever the text contains.
+fn read_first_version(path : String) -> String raise {
+  let text = @fs.read_file_to_string(path)
+  let needle = if path.has_suffix(".json") {
+    "\"version\": \""
+  } else {
+    "version = \""
+  }
+  match text.find(needle) {
+    None => fail("no version in \{path}")
+    Some(index) => {
+      let start = index + needle.length()
+      let rest = text.clamped_view(start~)
+      match rest.find("\"") {
+        None => fail("unterminated version in \{path}")
+        Some(end) => rest.exact_view(start=0, end~).to_owned()
+      }
+    }
+  }
+}
