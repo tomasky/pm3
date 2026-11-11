@@ -64,6 +64,13 @@ jobs:
       - name: One daemon for many concurrent clients
         run: ./scripts/test-concurrent-start.sh
 
+      # `--fix` has to end the processes the orphan started, not only the
+      # orphan: a SIGKILL to the daemon leaves them running, unsupervised and
+      # invisible, next to the copies the survivor owns. Only counting them
+      # against the real binary shows that.
+      - name: Doctor cleans up an orphan and its processes
+        run: ./scripts/test-doctor-orphan.sh
+
   shellcheck:
     name: lint install.sh
     runs-on: ubuntu-latest
