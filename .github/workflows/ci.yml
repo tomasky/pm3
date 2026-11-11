@@ -54,6 +54,16 @@ jobs:
       - name: Test
         run: moon test --target native
 
+      # `moon test` covers the start lock itself; this runs the binary to check
+      # the thing the lock is for. The daemon binds an arbitrary port, so a
+      # client that spawns a second daemon leaves an orphan that no command can
+      # see or stop, and only an end-to-end race shows it.
+      - name: Build release binary
+        run: moon build --target native --release
+
+      - name: One daemon for many concurrent clients
+        run: ./scripts/test-concurrent-start.sh
+
   shellcheck:
     name: lint install.sh
     runs-on: ubuntu-latest
@@ -63,7 +73,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          shellcheck install.sh
+          shellcheck install.sh scripts/*.sh
 
   npm:
     name: lint the npm wrapper

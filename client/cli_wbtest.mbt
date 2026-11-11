@@ -223,3 +223,110 @@ async test "take_start_lock admits one client at a time" {
   assert_true(take_start_lock())
   @fs.remove(path, allow_missing=true)
 }
+
+///|
+/// The invariant the start lock exists for: however many clients race, exactly
+/// one of them may go on to spawn a daemon. The loser would otherwise become
+/// an orphan — the daemon picks an arbitrary port, so only the winner's port
+/// reaches `daemon.port` and the other daemon can never be listed or stopped.
+async test "only one of many racing clients takes the start lock" {
+  let dir = "/tmp/pm3-lock-race"
+  @fs.mkdir(dir, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  let path = dir + "/daemon.lock"
+  @fs.remove(path, allow_missing=true)
+  let winners = []
+  let attempts = 8
+  @async.with_task_group() <| group => {
+    for _ in 0..<attempts {
+      group.spawn_bg() <| () => {
+        if take_start_lock(path~) {
+          winners.push(())
+        }
+      }
+    }
+  }
+  assert_eq(winners.length(), 1)
+  // The winner is a live process, so a later client must still be refused.
+  assert_false(take_start_lock(path~))
+  @fs.remove(path, allow_missing=true)
+  @fs.rmdir(dir) catch {
+    _ => ()
+  }
+}
+
+///|
+/// A daemon that dies while holding the lock must not block the next command,
+/// which is what makes a crash during startup survivable.
+async test "a lock left by a dead client is replaced" {
+  let dir = "/tmp/pm3-lock-dead"
+  @fs.mkdir(dir, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  let path = dir + "/daemon.lock"
+  @fs.write_file(path, "999999", create_mode=@fs.CreateOrTruncate) catch {
+    _ => abort("cannot write lock")
+  }
+  assert_true(take_start_lock(path~))
+  @fs.remove(path, allow_missing=true)
+  @fs.rmdir(dir) catch {
+    _ => ()
+  }
+}
+
+///|
+/// A lock that is mid-write must not be stolen. Taking the lock is the atomic
+/// `CreateNew` followed by writing the pid, so a second client can read the
+/// file while it is still empty. Treating that as stale let it delete a live
+/// lock and spawn a second daemon — about one duplicate in twelve runs of
+/// eight concurrent clients — so the reader retries rather than stealing.
+async test "a lock being written is not stolen" {
+  let dir = "/tmp/pm3-lock-empty"
+  @fs.mkdir(dir, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  let path = dir + "/daemon.lock"
+  // The winner has taken the lock but has not written its pid yet.
+  @fs.write_file(path, "", create_mode=@fs.CreateOrTruncate) catch {
+    _ => abort("cannot write lock")
+  }
+  @async.with_task_group() <| group => {
+    group.spawn_bg() <| () => {
+      @async.sleep(100)
+      @fs.write_file(
+        path,
+        @daemon.pm3_getpid().to_string(),
+        create_mode=@fs.CreateOrTruncate,
+      ) catch {
+        _ => ()
+      }
+    }
+    // The reader sees an empty file, waits, then sees a live pid.
+    assert_false(take_start_lock(path~))
+  }
+  @fs.remove(path, allow_missing=true)
+  @fs.rmdir(dir) catch {
+    _ => ()
+  }
+}
+
+///|
+/// A lock that nothing ever fills is still stolen, after the retry window, so a
+/// client killed between `CreateNew` and the pid write cannot wedge the daemon.
+async test "a lock that is never filled is stolen" {
+  let dir = "/tmp/pm3-lock-garbage"
+  @fs.mkdir(dir, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  let path = dir + "/daemon.lock"
+  @fs.write_file(path, "not-a-pid", create_mode=@fs.CreateOrTruncate) catch {
+    _ => abort("cannot write lock")
+  }
+  assert_true(lock_is_stale(path))
+  assert_true(take_start_lock(path~))
+  @fs.remove(path, allow_missing=true)
+  @fs.rmdir(dir) catch {
+    _ => ()
+  }
+}
