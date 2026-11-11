@@ -145,11 +145,42 @@ pub async fn DaemonState::load(self : DaemonState) -> Unit {
   if !exists {
     return
   }
-  let text = @fs.read_file(path).text() catch { _ => return }
-  let parsed = @json.parse(text) catch { _ => return }
+  let text_result : Result[String, String] = Ok(@fs.read_file(path).text()) catch {
+    e => Err(e.to_string())
+  }
+  let text = match text_result {
+    Ok(text) => text
+    Err(_) => {
+      daemon_log("cannot read \{path}; starting with an empty process list")
+      return
+    }
+  }
+  let parsed_result : Result[Json, String] = Ok(@json.parse(text)) catch {
+    e => Err(e.to_string())
+  }
+  let parsed = match parsed_result {
+    Ok(parsed) => parsed
+    Err(_) => {
+      // A corrupt dump is moved aside rather than overwritten: the next save
+      // would otherwise replace the only copy of the process list with the
+      // empty table this load produced, losing every name and launch spec.
+      let aside = path + ".corrupt"
+      @fs.write_file(aside, text, create_mode=@fs.CreateOrTruncate) catch {
+        _ => ()
+      }
+      @fs.remove(path, allow_missing=true)
+      daemon_log(
+        "\{path} is not valid JSON: kept as \{aside} and starting with an empty process list",
+      )
+      return
+    }
+  }
   let apps = match @pm3.app_records_from_json(parsed) {
     Some(apps) => apps
-    None => return
+    None => {
+      daemon_log("\{path} does not hold a pm3 process list; ignoring it")
+      return
+    }
   }
   for app in apps {
     if app.pm_id >= self.next_id {
@@ -167,6 +198,11 @@ pub async fn DaemonState::load(self : DaemonState) -> Unit {
 
 ///|
 /// Persist the process table to `dump.json`.
+///
+/// A failed write is reported on the daemon log rather than swallowed: the
+/// dump is the only thing that survives a daemon restart, so a full disk or a
+/// bad permission here means the next start comes up with a stale process
+/// list, and silence would leave that invisible.
 pub async fn DaemonState::save(self : DaemonState) -> Unit {
   let apps : Array[@pm3.App] = []
   for managed in self.ordered() {
@@ -174,6 +210,9 @@ pub async fn DaemonState::save(self : DaemonState) -> Unit {
   }
   let text = @json.to_json(apps).stringify()
   @fs.write_file(@pm3.pm3_dump_path(), text, create_mode=@fs.CreateOrTruncate) catch {
-    _ => ()
+    e =>
+      daemon_log(
+        "cannot write \{@pm3.pm3_dump_path()}: \{e}; the saved process list is now stale",
+      )
   }
 }
