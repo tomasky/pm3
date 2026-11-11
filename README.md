@@ -431,25 +431,29 @@ The exit status is non-zero when any check fails, so it works as a health check;
 `--json` makes it parseable. `doctor` never starts a daemon — a read-only check
 that spawned the thing it was looking for would defeat the point.
 
-`--fix` hands an orphan's processes to the surviving daemon before killing it,
-so they come back online rather than showing up as stopped:
+`--fix` ends what the orphan was running and lets the surviving daemon restart
+what it still believes should be online:
 
 ```
 $ pm3 doctor --fix
-Signalled orphan daemon 24980.
-disowned 0 process(es)
+Signalled orphan daemon 38216.
+Ended 2 process(es) the orphan had started.
 resurrected 1 process(es)
 ```
 
 - The orphan is signalled with `SIGKILL`, not `SIGTERM`: its own shutdown would
   save its `dump.json` over the list the live daemon owns.
 - A `SIGKILL` to the daemon does not end the processes it started — the kernel
-  reparents them — so their pids are collected from `/proc` first and reported
-  to the survivor. It marks them stopped, keeping pid and start time, which is
-  what lets `resurrect` prove it is signalling the same process before replacing
-  it with one it supervises itself.
-- No survivor means nowhere to hand them to. They are reported on stderr with a
-  non-zero status instead of being silently abandoned.
+  reparents them, nothing restarts them and `pm3 stop` cannot reach them. Their
+  pids are collected from `/proc` before the signal and each tree is ended with
+  `SIGTERM`, then `SIGKILL` for whatever survived. Without this an orphan that
+  was running the same app as the survivor left a second copy running next to
+  the supervised one.
+- The survivor is then asked to resurrect, so the apps it believes should be
+  online come back under its control. An app that already has a copy of its own
+  is left alone, so this cannot produce a second one.
+- No survivor means nowhere to hand them to; they are still ended, and the
+  command reports what it could not restart on stderr with a non-zero status.
 
 ### `start` options
 

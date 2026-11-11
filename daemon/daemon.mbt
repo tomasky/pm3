@@ -516,38 +516,6 @@ async fn dispatch(
       state.save()
       @pm3.Response::success("saved process list to \{@pm3.pm3_dump_path()}")
     }
-    "disown" => {
-      // Called by `pm3 doctor --fix` after it has killed an orphan daemon: the
-      // processes it had started are still alive, but nothing here spawned
-      // them, so the status this table copied from the shared dump is a lie.
-      // Clearing it keeps the pid and its start time, which is what
-      // `resurrect` uses to prove it is signalling the same process before
-      // replacing it with a supervised copy.
-      let disowned_pids : Array[Int32] = []
-      for arg in request.args {
-        match @pm3.parse_non_negative_int(arg) {
-          Some(pid) => disowned_pids.push(pid)
-          None => ()
-        }
-      }
-      let mut count = 0
-      for _, managed in state.ordered() {
-        let app = managed.app
-        if app.pid > 0 && disowned_pids.contains(app.pid) {
-          if app.is_online() {
-            count = count + 1
-          }
-          app.status = @pm3.status_stopped
-          app.memory = 0L
-          app.cpu = 0.0
-          daemon_log(
-            "disowned pid \{app.pid} of \{app.name}: not started by this daemon",
-          )
-        }
-      }
-      state.save()
-      @pm3.Response::success("disowned \{count} process(es)")
-    }
     "resurrect" => {
       let mut started = 0
       let failures : Array[String] = []

@@ -1346,36 +1346,24 @@ async fn cmd_doctor(args : Array[String]) -> Unit {
     @daemon.send_signal(daemon.pid, @daemon.signal_number("SIGKILL"))
     print_line("Signalled orphan daemon \{daemon.pid}.")
   }
-  if orphaned_pids.length() == 0 {
-    return
-  }
-  // Hand the dead daemon's processes to the survivor: it marks them stopped
-  // (keeping pid and start time), then `resurrect` replaces each with a copy it
-  // supervises itself. Without this they would sit there as unsupervised
-  // processes shown as online, which is the state the orphan left behind.
-  let pid_args : Array[String] = []
+  // The processes the orphan started are unsupervised now: the kernel
+  // reparented them, nobody restarts them and `pm3 stop` cannot reach them.
+  // Leaving them would keep a second copy of a service running next to the one
+  // the surviving daemon owns, so each tree is ended here.
+  let mut ended = 0
   for pid in orphaned_pids {
-    pid_args.push(pid.to_string())
+    ended = ended + @daemon.kill_tree(pid, @daemon.sig_term)
+    @async.sleep(200)
+    // Only what survived the polite signal, so a service that shuts down
+    // cleanly is not killed outright.
+    ignore(@daemon.kill_tree(pid, @daemon.sig_kill))
   }
-  let disowned = Ok(call(@pm3.Request::with_args(@pm3.cmd_disown, pid_args))) catch {
-    e => Err(e.to_string())
+  if ended > 0 {
+    print_line("Ended \{ended} process(es) the orphan had started.")
   }
-  match disowned {
-    Ok(response) =>
-      if response.ok {
-        print_line(response.msg)
-      } else {
-        print_error(
-          "pm3: the surviving daemon did not disown them: \{response.msg}",
-        )
-      }
-    Err(message) =>
-      // No survivor at all: nothing to hand them to, and they are now truly
-      // unreferenced. Say so rather than pretending it worked.
-      print_error(
-        "pm3: \{orphaned_pids.length()} process(es) from the orphan are still running unsupervised: \{message}",
-      )
-  }
+  // What the survivor still believes should be online comes back under it. An
+  // app that already has a copy of its own is left alone, so this cannot
+  // produce a second one.
   let resurrected = Ok(call(@pm3.Request::new(@pm3.cmd_resurrect))) catch {
     e => Err(e.to_string())
   }
