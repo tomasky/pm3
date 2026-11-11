@@ -167,3 +167,59 @@ test "fit_name_pm2 cuts long names like PM2's fitColumn" {
   }
   assert_eq(fit_name_pm2(buf39.to_string()), buf37.to_string() + "…")
 }
+
+///|
+/// A start lock naming a live pid is honoured; one naming a dead pid or
+/// holding something that is not a pid is stale, so a client that died
+/// mid-spawn cannot wedge every later command.
+async test "lock_is_stale reads the pid in the lock file" {
+  let dir = "/tmp/pm3-lock-test"
+  @fs.mkdir(dir, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  let path = dir + "/daemon.lock"
+  // A pid that no longer exists (the pid space does not reach this far).
+  @fs.write_file(path, "999999", create_mode=@fs.CreateOrTruncate) catch {
+    _ => abort("cannot write lock")
+  }
+  assert_true(lock_is_stale(path))
+  // Something that is not a pid at all is equally stale.
+  @fs.write_file(path, "not-a-pid", create_mode=@fs.CreateOrTruncate) catch {
+    _ => abort("cannot write lock")
+  }
+  assert_true(lock_is_stale(path))
+  // Our own pid is alive, so the lock is held by a running client.
+  @fs.write_file(
+    path,
+    @daemon.pm3_getpid().to_string(),
+    create_mode=@fs.CreateOrTruncate,
+  ) catch {
+    _ => abort("cannot write lock")
+  }
+  assert_false(lock_is_stale(path))
+  // A missing lock is stale, which is how the very first client sees it.
+  @fs.remove(path, allow_missing=true)
+  assert_true(lock_is_stale(path))
+  @fs.rmdir(dir) catch {
+    _ => ()
+  }
+}
+
+///|
+/// Two clients racing for the lock: `CreateNew` lets exactly one win, and the
+/// loser is told to wait rather than spawning a second daemon.
+async test "take_start_lock admits one client at a time" {
+  let home = @pm3.pm3_state_dir()
+  @fs.mkdir(home, recursive=true, allow_exist=true) catch {
+    _ => ()
+  }
+  let path = @pm3.pm3_start_lock_path()
+  @fs.remove(path, allow_missing=true)
+  assert_true(take_start_lock())
+  // The second attempt finds a lock owned by this live process.
+  assert_false(take_start_lock())
+  @fs.remove(path, allow_missing=true)
+  // Once the holder is gone the lock is released and can be taken again.
+  assert_true(take_start_lock())
+  @fs.remove(path, allow_missing=true)
+}

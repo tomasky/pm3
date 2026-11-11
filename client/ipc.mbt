@@ -42,6 +42,55 @@ async fn try_call(request : @pm3.Request) -> @pm3.Response? {
 }
 
 ///|
+/// Whether the process `pid` is still alive, asked without a signal.
+async fn is_alive(pid : Int32) -> Bool {
+  (@fs.kind("/proc/\{pid}") catch { _ => @fs.Unknown }) == @fs.Directory
+}
+
+///|
+/// Take the start lock, or report that another client already holds it.
+///
+/// `CreateNew` is the atomic part: exactly one of two racing clients creates
+/// the file and the other fails. A lock left behind by a client that died
+/// mid-spawn names a pid; once that pid is gone the lock is stale and is
+/// replaced, so a crash cannot wedge every later command.
+async fn take_start_lock() -> Bool {
+  let path = @pm3.pm3_start_lock_path()
+  let write_lock = () => {
+    try {
+      @fs.write_file(
+        path,
+        @daemon.pm3_getpid().to_string(),
+        create_mode=@fs.CreateNew,
+      )
+      true
+    } catch {
+      _ => false
+    }
+  }
+  if write_lock() {
+    return true
+  }
+  if !lock_is_stale(path) {
+    return false
+  }
+  // Replacing a stale lock is itself a race, so it goes through the same
+  // atomic create: whoever recreates it first owns the spawn.
+  @fs.remove(path, allow_missing=true)
+  write_lock()
+}
+
+///|
+/// Whether the lock at `path` was left by a process that no longer exists.
+async fn lock_is_stale(path : String) -> Bool {
+  let text = @fs.read_file(path).text() catch { _ => return true }
+  match @pm3.parse_non_negative_int(text.trim()) {
+    None => true
+    Some(pid) => !is_alive(pid)
+  }
+}
+
+///|
 /// Launch the daemon detached, with its output redirected to `~/.pm3/pm3.log`.
 pub async fn start_daemon() -> Unit {
   @fs.mkdir(@pm3.pm3_state_dir(), recursive=true, allow_exist=true) catch {
@@ -49,6 +98,23 @@ pub async fn start_daemon() -> Unit {
   }
   let exe = @fs.realpath("/proc/self/exe") catch { _ => return }
   let log = @pm3.pm3_daemon_log_path()
+  // Whoever takes the lock spawns; everyone else waits for the port file the
+  // winner's daemon publishes. Without this, two clients that both miss
+  // `daemon.port` spawn two daemons, and the loser becomes an orphan nothing
+  // can list or stop.
+  if !take_start_lock() {
+    for _ in 0..<100 {
+      @async.sleep(100)
+      if read_port_file() is Some(_) {
+        @async.sleep(150)
+        return
+      }
+    }
+    return
+  }
+  defer (@fs.remove(@pm3.pm3_start_lock_path(), allow_missing=true) catch {
+    _ => ()
+  })
   let out = @process.redirect_to_file(
     log,
     append=true,
