@@ -1311,16 +1311,23 @@ async fn cmd_doctor(args : Array[String]) -> Unit {
   // Both an orphan and a failed check mean something is already wrong, so the
   // status is non-zero either way and a health check can act on it without
   // parsing the table.
-  if orphans.length() > 0 {
+  if orphans.length() > 0 && !fix {
     @stdio.stderr.write(
-      "\{orphans.length()} orphan daemon(s) are supervising processes nothing can list. Run `pm3 doctor --fix` to signal them.\n",
+      "\{orphans.length()} orphan daemon(s) are supervising processes nothing can list. Run `pm3 doctor --fix` to clean them up.\n",
     )
   }
-  let failed = @daemon.checks_failed(checks)
-  if orphans.length() > 0 || failed {
-    command_failed.val = true
+  // Without `--fix` this command only reports, so the pre-fix state decides the
+  // status. With `--fix` it acts, and what matters is whether anything is still
+  // wrong afterwards: a repair that works has to exit 0, or a health check can
+  // never tell it apart from one that failed.
+  if !fix {
+    let failed = @daemon.checks_failed(checks)
+    if orphans.length() > 0 || failed {
+      command_failed.val = true
+    }
+    return
   }
-  if !fix || orphans.length() == 0 {
+  if orphans.length() == 0 {
     return
   }
   // The orphans' processes outlive a SIGKILL to their daemon — the kernel
@@ -1370,6 +1377,21 @@ async fn cmd_doctor(args : Array[String]) -> Unit {
   match resurrected {
     Ok(response) => print_line(response.msg)
     Err(message) => print_error("pm3: could not restart them: \{message}")
+  }
+  // Judge the repair by what is left, not by what was found.
+  let remaining = @daemon.run_checks(
+    home,
+    reachable_daemon(@daemon.find_daemons(home), None),
+  )
+  if @daemon.checks_failed(remaining) {
+    command_failed.val = true
+    for check in remaining {
+      if check.state is @daemon.CheckState::Fail {
+        print_error(
+          "pm3: still failing after --fix: \{check.name}: \{check.detail}",
+        )
+      }
+    }
   }
 }
 

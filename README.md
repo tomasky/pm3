@@ -454,6 +454,8 @@ resurrected 1 process(es)
   is left alone, so this cannot produce a second one.
 - No survivor means nowhere to hand them to; they are still ended, and the
   command reports what it could not restart on stderr with a non-zero status.
+- `--fix` exits on what is left, not on what it found: a repair that worked
+  exits 0, so a health check can run it without treating success as failure.
 
 ### `start` options
 
