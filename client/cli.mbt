@@ -1206,6 +1206,47 @@ async fn cmd_kill() -> Unit {
 }
 
 ///|
+/// Which daemon every other command actually talks to.
+///
+/// `daemon.port` is the file they all go through, so the daemon on the other
+/// end of it is the survivor — not necessarily the one `daemon.pid` names,
+/// which is why the answer is asked for rather than assumed. A single daemon is
+/// always the survivor: there is nothing else for it to be confused with, and
+/// treating it as an orphan would make `--fix` kill a working supervisor.
+pub async fn reachable_daemon(
+  daemons : Array[@daemon.DaemonProc],
+  pid_file_pid : Int32?,
+) -> Int32? {
+  if daemons.length() == 1 {
+    return Some(daemons[0].pid)
+  }
+  // `try_call`, not `call`: `call` starts a daemon when none answers, and a
+  // read-only check must not create the very thing it is looking for. On a
+  // fresh home that turned `pm3 doctor` into a command that spawned a daemon
+  // and then reported it as healthy.
+  match try_call(@pm3.Request::new(@pm3.cmd_ping)) {
+    Some(response) =>
+      if response.ok {
+        // `data` is already a `Json`; decoding it again only asks the decoder
+        // to invent a type, and a daemon built before the pid was added to
+        // `pong` answers with null.
+        match response.data {
+          Json::Number(reported, ..) =>
+            for daemon in daemons {
+              if daemon.pid.to_double() == reported {
+                return Some(daemon.pid)
+              }
+            }
+          _ => ()
+        }
+      }
+    None => ()
+  }
+  // Nothing answered: fall back to the pid file, which a crash leaves stale.
+  @daemon.current_daemon(daemons, pid_file_pid)
+}
+
+///|
 /// `pm3 doctor` — look for daemons that belong to this `PM3_HOME` but are not
 /// the one `daemon.pid` names.
 ///
@@ -1235,14 +1276,14 @@ async fn cmd_doctor(args : Array[String]) -> Unit {
   let pid_file_pid = @pm3.parse_non_negative_int(
     (@fs.read_file(@pm3.pm3_pid_path()).text() catch { _ => "" }).trim(),
   )
-  let current = @daemon.current_daemon(daemons, pid_file_pid)
+  let current = reachable_daemon(daemons, pid_file_pid)
   let orphans : Array[@daemon.DaemonProc] = []
   for daemon in daemons {
     if current != Some(daemon.pid) {
       orphans.push(daemon)
     }
   }
-  let checks = @daemon.run_checks(home)
+  let checks = @daemon.run_checks(home, current)
   if json {
     let records : Array[Json] = []
     for check in checks {
@@ -1282,12 +1323,65 @@ async fn cmd_doctor(args : Array[String]) -> Unit {
   if !fix || orphans.length() == 0 {
     return
   }
+  // The orphans' processes outlive a SIGKILL to their daemon — the kernel
+  // reparents them, it does not end them — so their pids are collected first.
+  // They are what the surviving daemon has to be told about, otherwise it
+  // keeps reporting them online while nothing supervises them.
+  let orphaned_pids : Array[Int32] = []
+  for daemon in orphans {
+    match @daemon.snapshot_tree(daemon.pid) {
+      None => ()
+      Some(tree) =>
+        for proc in tree {
+          if proc.pid != daemon.pid && proc.state != 'Z' {
+            orphaned_pids.push(proc.pid)
+          }
+        }
+    }
+  }
   for daemon in orphans {
     // SIGKILL rather than SIGTERM: the daemon's own shutdown path saves its
     // dump, and an orphan's dump would overwrite the current one with a list
     // that nothing else can see. Dropping it is the only safe option.
     @daemon.send_signal(daemon.pid, @daemon.signal_number("SIGKILL"))
     print_line("Signalled orphan daemon \{daemon.pid}.")
+  }
+  if orphaned_pids.length() == 0 {
+    return
+  }
+  // Hand the dead daemon's processes to the survivor: it marks them stopped
+  // (keeping pid and start time), then `resurrect` replaces each with a copy it
+  // supervises itself. Without this they would sit there as unsupervised
+  // processes shown as online, which is the state the orphan left behind.
+  let pid_args : Array[String] = []
+  for pid in orphaned_pids {
+    pid_args.push(pid.to_string())
+  }
+  let disowned = Ok(call(@pm3.Request::with_args(@pm3.cmd_disown, pid_args))) catch {
+    e => Err(e.to_string())
+  }
+  match disowned {
+    Ok(response) =>
+      if response.ok {
+        print_line(response.msg)
+      } else {
+        print_error(
+          "pm3: the surviving daemon did not disown them: \{response.msg}",
+        )
+      }
+    Err(message) =>
+      // No survivor at all: nothing to hand them to, and they are now truly
+      // unreferenced. Say so rather than pretending it worked.
+      print_error(
+        "pm3: \{orphaned_pids.length()} process(es) from the orphan are still running unsupervised: \{message}",
+      )
+  }
+  let resurrected = Ok(call(@pm3.Request::new(@pm3.cmd_resurrect))) catch {
+    e => Err(e.to_string())
+  }
+  match resurrected {
+    Ok(response) => print_line(response.msg)
+    Err(message) => print_error("pm3: could not restart them: \{message}")
   }
 }
 

@@ -3,12 +3,15 @@ package "kupas/pm3/client"
 
 import {
   "kupas/pm3",
+  "kupas/pm3/daemon",
 }
 
 // Values
 pub async fn call(@pm3.Request) -> @pm3.Response
 
 pub async fn main_cli() -> Unit
+
+pub async fn reachable_daemon(Array[@daemon.DaemonProc], Int32?) -> Int32?
 
 pub async fn start_daemon() -> Unit
 

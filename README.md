@@ -428,10 +428,28 @@ that matters, and root ignores the bits entirely. Missing files and directories
 that pm3 creates on demand are `warn`, not `fail`.
 
 The exit status is non-zero when any check fails, so it works as a health check;
-`--json` makes it parseable. `--fix` signals orphans with `SIGKILL` —
-deliberately not `SIGTERM`, because an orphan's own shutdown would save its
-`dump.json` over the list the live daemon owns. Processes that only the orphan
-was running come back as `stopped`; start them again with `pm3 resurrect`.
+`--json` makes it parseable. `doctor` never starts a daemon — a read-only check
+that spawned the thing it was looking for would defeat the point.
+
+`--fix` hands an orphan's processes to the surviving daemon before killing it,
+so they come back online rather than showing up as stopped:
+
+```
+$ pm3 doctor --fix
+Signalled orphan daemon 24980.
+disowned 0 process(es)
+resurrected 1 process(es)
+```
+
+- The orphan is signalled with `SIGKILL`, not `SIGTERM`: its own shutdown would
+  save its `dump.json` over the list the live daemon owns.
+- A `SIGKILL` to the daemon does not end the processes it started — the kernel
+  reparents them — so their pids are collected from `/proc` first and reported
+  to the survivor. It marks them stopped, keeping pid and start time, which is
+  what lets `resurrect` prove it is signalling the same process before replacing
+  it with one it supervises itself.
+- No survivor means nowhere to hand them to. They are reported on stderr with a
+  non-zero status instead of being silently abandoned.
 
 ### `start` options
 

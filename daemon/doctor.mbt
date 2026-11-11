@@ -245,13 +245,10 @@ fn short_size(bytes : Int64) -> String {
 /// disk loses the process list on the next restart, a stale `daemon.port`
 /// sends every command to nothing, and a leftover start lock can keep a client
 /// waiting. None of them announce themselves at the moment they happen.
-pub async fn run_checks(home : String) -> Array[Check] {
+pub async fn run_checks(home : String, survivor : Int32?) -> Array[Check] {
   let checks : Array[Check] = []
   let daemons = find_daemons(home)
-  let pid_file_pid = @pm3.parse_non_negative_int(
-    (@fs.read_file(@pm3.pm3_pid_path()).text() catch { _ => "" }).trim(),
-  )
-  let current = current_daemon(daemons, pid_file_pid)
+  let current = survivor
   // The daemon itself: none is fine, more than one is not.
   checks.push(
     if daemons.length() == 0 {
@@ -290,6 +287,9 @@ pub async fn run_checks(home : String) -> Array[Check] {
   }
   // daemon.pid: a stale one is harmless, a missing one with a daemon running
   // means the next scan cannot tell which daemon is current.
+  let pid_file_pid = @pm3.parse_non_negative_int(
+    (@fs.read_file(@pm3.pm3_pid_path()).text() catch { _ => "" }).trim(),
+  )
   let pid_exists = (@fs.file_size(@pm3.pm3_pid_path()) catch { _ => -1L }) >= 0L
   checks.push(
     if daemons.length() == 0 {
@@ -306,13 +306,25 @@ pub async fn run_checks(home : String) -> Array[Check] {
           "absent, no daemon to describe"
         },
       }
-    } else if current is Some(_) {
-      { name: "daemon.pid", state: Ok, detail: "matches the running daemon", }
+    } else if current is Some(pid) {
+      {
+        name: "daemon.pid",
+        state: if pid_file_pid == Some(pid) {
+          Ok
+        } else {
+          Warn
+        },
+        detail: if pid_file_pid == Some(pid) {
+          "matches the running daemon"
+        } else {
+          "does not name the daemon on daemon.port; rewritten on the next command"
+        },
+      }
     } else {
       {
         name: "daemon.pid",
         state: Fail,
-        detail: "does not name a running daemon; every command reads it",
+        detail: "names no live daemon; every command reads it",
       }
     },
   )

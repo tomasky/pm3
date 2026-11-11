@@ -73,7 +73,7 @@ pub async fn resolve_tz_offset(String, Int64) -> Int32
 
 pub async fn restart_managed(@async.TaskGroup[Unit], DaemonState, Managed) -> Unit
 
-pub async fn run_checks(String) -> Array[Check]
+pub async fn run_checks(String, Int32?) -> Array[Check]
 
 pub async fn run_compress_loop(DaemonState) -> Unit
 

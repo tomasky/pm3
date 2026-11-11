@@ -33,6 +33,8 @@ pub let cmd_delete : String
 
 pub let cmd_describe : String
 
+pub let cmd_disown : String
+
 pub let cmd_flush : String
 
 pub let cmd_get_config : String

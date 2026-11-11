@@ -52,6 +52,11 @@ pub let cmd_save : String = "save"
 pub let cmd_resurrect : String = "resurrect"
 
 ///|
+/// Give up apps whose processes belonged to a different daemon, keeping the pid
+/// and its start time so `resurrect` can clear them and start a supervised copy.
+pub let cmd_disown : String = "disown"
+
+///|
 pub let cmd_kill : String = "kill"
 
 ///|

@@ -330,3 +330,26 @@ async test "a lock that is never filled is stolen" {
     _ => ()
   }
 }
+
+///|
+/// A single daemon is the survivor, never an orphan.
+///
+/// It is the only thing that could be serving `daemon.port`, so treating it as
+/// an orphan would make `pm3 doctor --fix` kill a working supervisor on the
+/// strength of one missing file. The answer is returned without touching the
+/// socket, which is why this test does not need a daemon to run.
+async test "a lone daemon is the survivor even without a pid file" {
+  let lone : Array[@daemon.DaemonProc] = [{ pid: 4242, home: "/root/.pm3", }]
+  let no_pid_file = reachable_daemon(lone, None)
+  assert_eq(no_pid_file, Some(4242))
+  let matching = reachable_daemon(lone, Some(4242))
+  assert_eq(matching, Some(4242))
+  // A pid file naming something else does not make the only daemon an orphan.
+  let stale_pid_file = reachable_daemon(lone, Some(999999))
+  assert_eq(stale_pid_file, Some(4242))
+  // No daemons at all: nothing is current.
+  let none_running = reachable_daemon([], Some(4242))
+  assert_eq(none_running, None)
+  let empty = reachable_daemon([], None)
+  assert_eq(empty, None)
+}
