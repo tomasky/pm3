@@ -12,7 +12,10 @@ permissions:
 jobs:
   test:
     name: check, format and test
-    runs-on: ubuntu-latest
+    # 24.04, not ubuntu-latest: 26.04 ships x86-64-v3 optimised packages
+    # (glibc included), and the release builds on 24.04 - CI should test the
+    # same environment, not a newer one that masks the baseline regression.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -60,6 +63,18 @@ jobs:
       # see or stop, and only an end-to-end race shows it.
       - name: Build release binary
         run: moon build --target native --release
+
+      # Same gate the release has: the static musl build - the artifact that
+      # ships - must run on a CPU without AVX2. Building it here on every push
+      # means a regression cannot reach a tag unnoticed; the runner image is
+      # pinned to 24.04 for the same reason as the release.
+      - name: Build static binary and verify it runs without AVX2
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools qemu-user
+          ./scripts/build-linux-static.sh dist/pm3-static
+          qemu-x86_64 -cpu qemu64 dist/pm3-static version
 
       - name: One daemon for many concurrent clients
         run: ./scripts/test-concurrent-start.sh
