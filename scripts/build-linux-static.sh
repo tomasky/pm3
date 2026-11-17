@@ -71,13 +71,24 @@ EOF
 musl-gcc -O2 -c "$work/fortify_shim.c" -o "$work/fortify_shim.o"
 ar rcs "$work/libmbfortify.a" "$work/fortify_shim.o"
 
+# The x86-64 instruction set baseline is pinned instead of inherited from the
+# host compiler. Current Ubuntu images (including GitHub's ubuntu-latest) build
+# gcc with `--with-arch=x86-64-v3`, which assumes AVX2/BMI2; a binary built that
+# way dies with SIGILL ("Illegal instruction") on any older x86-64 CPU or in a
+# VM that masks AVX2, before any of our code can run. Only x86-64 gets the pin:
+# aarch64 gcc rejects `-march=x86-64` outright.
+arch_flags=""
+case "$(uname -m)" in
+  x86_64 | amd64) arch_flags="-march=x86-64 -mtune=generic" ;;
+esac
+
 # --- compiler driver -------------------------------------------------------
 cat >"$work/pm3-musl-gcc" <<EOF
 #!/bin/sh
 # -idirafter keeps musl's libc headers ahead of glibc's while still making the
 # kernel UAPI headers reachable; -include limits.h supplies NAME_MAX, which
 # glibc's <unistd.h> provides transitively and musl's does not.
-common="-idirafter /usr/include -idirafter $multiarch -include limits.h"
+common="$arch_flags -idirafter /usr/include -idirafter $multiarch -include limits.h"
 for arg in "\$@"; do
   if [ "\$arg" = "-c" ]; then
     # shellcheck disable=SC2086

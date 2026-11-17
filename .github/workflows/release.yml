@@ -31,7 +31,11 @@ jobs:
           # run on any distribution regardless of its glibc version. A glibc
           # build would bake in the runner's symbol versions and refuse to
           # start on older systems ("GLIBC_2.38 not found").
-          - runner: ubuntu-latest
+          # Pinned to 24.04 rather than `ubuntu-latest`: images newer than
+          # 24.04 also ship a static musl `libc.a` built for x86-64-v3 (AVX2),
+          # and the `-march=x86-64` pin in scripts/build-linux-static.sh only
+          # covers our own code. A v3 memcpy is SIGILL on a pre-Haswell CPU.
+          - runner: ubuntu-24.04
             target: linux-x86_64
             musl: true
           # GitHub's arm64 Linux runners are only available to public
@@ -96,6 +100,18 @@ jobs:
           set -eu
           "./dist/pm3-${{ matrix.target }}" version
           "./dist/pm3-${{ matrix.target }}" help >/dev/null
+
+      # The artifact has to run on a CPU without AVX2. qemu's `qemu64` model is
+      # the oldest thing we can test against and is enough: the failure mode is
+      # an illegal instruction, not timing. Without this gate a build that
+      # needs AVX2 ships unnoticed and crashes on the user's machine.
+      - name: Verify the binary runs without AVX2
+        if: matrix.target == 'linux-x86_64'
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user
+          qemu-x86_64 -cpu qemu64 "./dist/pm3-${{ matrix.target }}" version
 
       - uses: actions/upload-artifact@v4
         with:
